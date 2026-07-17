@@ -26,6 +26,9 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Claude Code local settings (per-machine permissions)
+.claude/settings.local.json
+
 # FVM
 .fvm/
 
