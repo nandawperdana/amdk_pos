@@ -79,36 +79,44 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
 
 ## Status sekarang
 
-Fase 1 (MVP) hampir tuntas. SELESAI & terverifikasi di emulator:
+**Fase 1 (MVP) TUNTAS** & terverifikasi di emulator (Pixel 7 API 35):
 
-- Peran kasir/owner (`lib/main.dart` — `roleProvider`, pilih saat buka app,
-  belum dipersist).
+- Peran kasir/owner (`lib/main.dart` — `roleProvider` = `RoleNotifier`,
+  DIPERSIST via shared_preferences; ganti peran dari overflow POS & AppBar
+  Owner).
 - Seed 8 produk saat DB pertama dibuat (`AppDatabase._seedProducts`).
 - POS HP (`lib/ui/pos_screen.dart`) — grid tombol besar, galon wajib pilih
-  tukar/baru+deposit, bayar tunai/qris/transfer.
+  tukar/baru+deposit, bayar tunai/qris/transfer. Menu lain di overflow.
+- Master produk CRUD (`lib/ui/master_produk_screen.dart` + `ProductService`) —
+  tambah/edit/nonaktif (soft-delete, tak hapus baris); `isGalon` diikat
+  kategori=='galon'.
 - Tutup kasir (`lib/ui/tutup_kasir_screen.dart` + `CashierService`) —
   `CashierClosings` append-only + baris penyesuaian selisih (schemaVersion 2).
 - Kulakan/pembelian (`lib/ui/kulakan_screen.dart` + `PurchaseService`) —
   stok masuk, kas keluar, lunas/utang, galon toggle tukar kosong.
+- Opname/penyesuaian stok (`lib/ui/opname_screen.dart` + `OpnameService`) —
+  hitungan fisik per produk + wadah galon; tulis baris SELISIH (append-only).
 - Laporan harian (`lib/ui/laporan_harian_screen.dart` + `ReportsService.
   dailyReport`) — date picker (id_ID via flutter_localizations), rincian
   penjualan per produk + arus kas per kategori.
 - Owner: dashboard hari ini dari DB lokal (cloud = Fase 2) + tombol ke
   laporan harian.
-- Tes service `test/services_test.dart` (8 tes).
+- Tes service `test/services_test.dart` (11 tes).
 
 Pakai **fvm** (Flutter 3.44.0): `fvm flutter ...`, `fvm dart run build_runner
 build --delete-conflicting-outputs`.
 
 ## Langkah berikutnya (urutan disarankan)
 
-1. Master produk (CRUD: tambah/edit harga, nonaktifkan) — sekarang produk
-   cuma dari seed.
-2. Persist pilihan peran (shared_preferences) + tombol ganti peran/keluar
-   dari POS & Owner (sekarang back Android keluar app).
-3. Penyesuaian stok awal (opname) — banyak saldo galon kosong minus karena
-   stok awal belum dicatat.
-4. Mulai Fase 2: sync cloud (Supabase), piutang/utang, harga reseller.
+Fase 1 selesai. Lanjut ke Fase 2:
+
+1. Sinkronisasi cloud (Supabase) — aktifkan `SyncService.pushPending`
+   (push-only, idempotent by clientId). Owner baca laporan dari cloud.
+2. Piutang/utang — pelunasan penjualan kredit & pembelian utang (sekarang
+   penjualan piutang & kulakan utang sengaja lewati baris kas).
+3. Harga reseller (kolom/aturan harga per tipe pelanggan) + QRIS/transfer
+   sebagai metode pelunasan.
+4. Laba-rugi & arus kas periode.
 
 ## Konvensi
 
