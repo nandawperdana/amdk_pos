@@ -1,6 +1,7 @@
 import 'package:amdk_pos/data/database/database.dart';
 import 'package:amdk_pos/domain/services/cashier_service.dart';
 import 'package:amdk_pos/domain/services/galon_service.dart';
+import 'package:amdk_pos/domain/services/opname_service.dart';
 import 'package:amdk_pos/domain/services/product_service.dart';
 import 'package:amdk_pos/domain/services/purchase_service.dart';
 import 'package:amdk_pos/domain/services/reports_service.dart';
@@ -204,5 +205,40 @@ void main() {
         await (db.select(db.products)..where((t) => t.id.equals(baru.id)))
             .getSingleOrNull(),
         isNotNull);
+  });
+
+  test('opname stok: selisih dicatat, no-op kalau sama', () async {
+    final opname = OpnameService(db);
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+
+    // Sistem 0 → fisik 12: tulis selisih +12.
+    await opname.adjustStock(p.id, 12);
+    expect(await db.stockOf(p.id), 12);
+
+    // Fisik sama (12): no-op, tak ada baris baru.
+    final rowsBefore = (await db.select(db.stockMovements).get()).length;
+    await opname.adjustStock(p.id, 12);
+    expect((await db.select(db.stockMovements).get()).length, rowsBefore);
+
+    // Fisik turun ke 10: selisih -2.
+    await opname.adjustStock(p.id, 10);
+    expect(await db.stockOf(p.id), 10);
+  });
+
+  test('opname galon: koreksi kosong minus ke fisik nyata', () async {
+    final galon = GalonService(db);
+    final opname = OpnameService(db);
+
+    // Kulakan tukar bikin kosong minus (stok awal belum dicatat).
+    await galon.recordRestockExchange(qty: 10); // isi +10, kosong -10
+    var b = await db.galonBalance();
+    expect(b.empty, -10);
+
+    // Opname: fisik nyata isi 10, kosong 5, beredar 0.
+    await opname.adjustGalon(isi: 10, kosong: 5, beredar: 0);
+    b = await db.galonBalance();
+    expect(b.full, 10);
+    expect(b.empty, 5); // -10 dikoreksi +15 jadi 5
+    expect(b.depositOut, 0);
   });
 }

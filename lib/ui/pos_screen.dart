@@ -8,6 +8,7 @@ import '../domain/services/sales_service.dart';
 import '../main.dart';
 import 'kulakan_screen.dart';
 import 'master_produk_screen.dart';
+import 'opname_screen.dart';
 import 'tutup_kasir_screen.dart';
 
 /// Nilai deposit galon default. Masih keputusan terbuka (seragam vs per merk)
@@ -224,12 +225,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         title: const Text('Kasir'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.inventory_2_outlined),
-            tooltip: 'Master Produk',
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const MasterProdukScreen())),
-          ),
-          IconButton(
             icon: const Icon(Icons.add_shopping_cart_outlined),
             tooltip: 'Kulakan',
             onPressed: () => Navigator.push(context,
@@ -240,6 +235,31 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             tooltip: 'Tutup Kasir',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const TutupKasirScreen())),
+          ),
+          PopupMenuButton<VoidCallback>(
+            onSelected: (fn) => fn(),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const MasterProdukScreen())),
+                child: const ListTile(
+                    leading: Icon(Icons.inventory_2_outlined),
+                    title: Text('Master Produk')),
+              ),
+              PopupMenuItem(
+                value: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const OpnameScreen())),
+                child: const ListTile(
+                    leading: Icon(Icons.fact_check_outlined),
+                    title: Text('Opname Stok')),
+              ),
+              PopupMenuItem(
+                value: () => ref.read(roleProvider.notifier).select(null),
+                child: const ListTile(
+                    leading: Icon(Icons.switch_account),
+                    title: Text('Ganti Peran')),
+              ),
+            ],
           ),
         ],
       ),

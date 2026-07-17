@@ -20,6 +20,9 @@ dependencies:
   # State management
   flutter_riverpod: ^2.5.1
 
+  # Persist pilihan peran (kasir/owner) antar buka app.
+  shared_preferences: ^2.2.3
+
   # Sinkronisasi cloud (owner lihat laporan dari HP) — diaktifkan di Fase 2.
   supabase_flutter: ^2.5.6
 

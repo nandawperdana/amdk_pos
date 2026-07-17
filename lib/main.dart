@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/database/database.dart';
 import 'domain/services/cashier_service.dart';
 import 'domain/services/galon_service.dart';
+import 'domain/services/opname_service.dart';
 import 'domain/services/product_service.dart';
 import 'domain/services/purchase_service.dart';
 import 'domain/services/reports_service.dart';
@@ -34,6 +36,8 @@ final purchaseServiceProvider =
     Provider((ref) => PurchaseService(ref.watch(dbProvider)));
 final productServiceProvider =
     Provider((ref) => ProductService(ref.watch(dbProvider)));
+final opnameServiceProvider =
+    Provider((ref) => OpnameService(ref.watch(dbProvider)));
 
 /// Semua produk (aktif + nonaktif), live — untuk layar master produk.
 /// Aktif dulu, lalu per kategori & nama.
@@ -51,18 +55,50 @@ final allProductsProvider = StreamProvider<List<Product>>((ref) {
 // --- Peran ------------------------------------------------------------------
 
 /// Satu app dua peran: kasir (POS penuh, tulis lokal) dan owner (baca laporan).
-/// Dipilih saat buka app. ponytail: belum dipersist — tambah shared_preferences
-/// kalau pilih-tiap-buka terasa mengganggu.
+/// Dipilih saat buka app, lalu dipersist (shared_preferences).
 enum AppRole { kasir, owner }
 
-final roleProvider = StateProvider<AppRole?>((ref) => null);
+/// Diisi di main() lewat override — SharedPreferences dibaca sinkron.
+final prefsProvider = Provider<SharedPreferences>((ref) {
+  throw UnimplementedError('Override di main()');
+});
+
+const _roleKey = 'role';
+
+class RoleNotifier extends Notifier<AppRole?> {
+  @override
+  AppRole? build() {
+    return switch (ref.watch(prefsProvider).getString(_roleKey)) {
+      'kasir' => AppRole.kasir,
+      'owner' => AppRole.owner,
+      _ => null,
+    };
+  }
+
+  /// Pilih peran (persist) atau kembali ke pemilih peran (null → hapus).
+  void select(AppRole? role) {
+    final prefs = ref.read(prefsProvider);
+    if (role == null) {
+      prefs.remove(_roleKey);
+    } else {
+      prefs.setString(_roleKey, role.name);
+    }
+    state = role;
+  }
+}
+
+final roleProvider = NotifierProvider<RoleNotifier, AppRole?>(RoleNotifier.new);
 
 // --- App --------------------------------------------------------------------
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('id_ID'); // format Rp & tanggal Indonesia
-  runApp(const ProviderScope(child: AmdkPosApp()));
+  final prefs = await SharedPreferences.getInstance();
+  runApp(ProviderScope(
+    overrides: [prefsProvider.overrideWithValue(prefs)],
+    child: const AmdkPosApp(),
+  ));
 }
 
 class AmdkPosApp extends ConsumerWidget {
@@ -116,7 +152,7 @@ class RolePickerScreen extends ConsumerWidget {
                   icon: const Icon(Icons.point_of_sale),
                   label: const Text('KASIR', style: TextStyle(fontSize: 22)),
                   onPressed: () =>
-                      ref.read(roleProvider.notifier).state = AppRole.kasir,
+                      ref.read(roleProvider.notifier).select(AppRole.kasir),
                 ),
               ),
               const SizedBox(height: 16),
@@ -126,7 +162,7 @@ class RolePickerScreen extends ConsumerWidget {
                   icon: const Icon(Icons.bar_chart),
                   label: const Text('OWNER', style: TextStyle(fontSize: 22)),
                   onPressed: () =>
-                      ref.read(roleProvider.notifier).state = AppRole.owner,
+                      ref.read(roleProvider.notifier).select(AppRole.owner),
                 ),
               ),
             ],
@@ -169,6 +205,11 @@ class OwnerScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.invalidate(ownerSummaryProvider),
+          ),
+          IconButton(
+            icon: const Icon(Icons.switch_account),
+            tooltip: 'Ganti Peran',
+            onPressed: () => ref.read(roleProvider.notifier).select(null),
           ),
         ],
       ),
