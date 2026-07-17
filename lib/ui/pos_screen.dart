@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../data/database/database.dart';
 import '../domain/services/sales_service.dart';
 import '../main.dart';
+import 'kulakan_screen.dart';
 import 'tutup_kasir_screen.dart';
 
 /// Nilai deposit galon default. Masih keputusan terbuka (seragam vs per merk)
@@ -221,6 +222,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       appBar: AppBar(
         title: const Text('Kasir'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.add_shopping_cart_outlined),
+            tooltip: 'Kulakan',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const KulakanScreen())),
+          ),
           IconButton(
             icon: const Icon(Icons.point_of_sale_outlined),
             tooltip: 'Tutup Kasir',

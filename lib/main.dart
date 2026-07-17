@@ -5,6 +5,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'data/database/database.dart';
 import 'domain/services/cashier_service.dart';
 import 'domain/services/galon_service.dart';
+import 'domain/services/purchase_service.dart';
 import 'domain/services/reports_service.dart';
 import 'domain/services/sales_service.dart';
 import 'ui/pos_screen.dart';
@@ -25,6 +26,8 @@ final reportsServiceProvider =
     Provider((ref) => ReportsService(ref.watch(dbProvider)));
 final cashierServiceProvider =
     Provider((ref) => CashierService(ref.watch(dbProvider)));
+final purchaseServiceProvider =
+    Provider((ref) => PurchaseService(ref.watch(dbProvider)));
 
 // --- Peran ------------------------------------------------------------------
 

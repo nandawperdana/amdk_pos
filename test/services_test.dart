@@ -1,6 +1,7 @@
 import 'package:amdk_pos/data/database/database.dart';
 import 'package:amdk_pos/domain/services/cashier_service.dart';
 import 'package:amdk_pos/domain/services/galon_service.dart';
+import 'package:amdk_pos/domain/services/purchase_service.dart';
 import 'package:amdk_pos/domain/services/reports_service.dart';
 import 'package:amdk_pos/domain/services/sales_service.dart';
 import 'package:drift/native.dart';
@@ -76,7 +77,7 @@ void main() {
     expect(await cashier.openingBalance(), 0); // belum pernah tutup
 
     // Fisik kurang dari sistem (misal ada uang kembalian salah hitung).
-    final shortage = 500.0;
+    const shortage = 500.0;
     await cashier.recordClosing(physicalCount: systemBalance - shortage);
 
     // Selisih tercatat sebagai baris kas baru, bukan mengubah baris lama.
@@ -86,5 +87,46 @@ void main() {
 
     // Closing berikutnya mulai dari hitungan fisik closing sebelumnya.
     expect(await cashier.openingBalance(), systemBalance - shortage);
+  });
+
+  test('kulakan lunas: stok masuk, kas keluar', () async {
+    final purchase = PurchaseService(db);
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+
+    await purchase.recordPurchase(
+        lines: [PurchaseLine(productId: p.id, qtyBase: 10, price: p.buyPrice)]);
+
+    expect(await db.stockOf(p.id), 10);
+    expect(await db.cashBalance(), -p.buyPrice * 10); // uang keluar
+  });
+
+  test('kulakan utang: stok masuk, kas TIDAK berubah', () async {
+    final purchase = PurchaseService(db);
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+
+    await purchase.recordPurchase(
+      lines: [PurchaseLine(productId: p.id, qtyBase: 5, price: p.buyPrice)],
+      paymentStatus: 'utang',
+    );
+
+    expect(await db.stockOf(p.id), 5);
+    expect(await db.cashBalance(), 0); // belum bayar, kas tetap
+  });
+
+  test('kulakan galon isi + tukar kosong: air stok naik, wadah bergerak', () async {
+    final purchase = PurchaseService(db);
+    final galon = GalonService(db);
+    final g = await (db.select(db.products)..where((t) => t.isGalon.equals(true))
+          ..limit(1))
+        .getSingle();
+
+    await purchase.recordPurchase(
+        lines: [PurchaseLine(productId: g.id, qtyBase: 20, price: g.buyPrice)]);
+    await galon.recordRestockExchange(qty: 20);
+
+    expect(await db.stockOf(g.id), 20); // air siap jual
+    final b = await db.galonBalance();
+    expect(b.full, 20); // wadah isi
+    expect(b.empty, -20); // kosong ditukar ke agen
   });
 }
