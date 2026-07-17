@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -8,6 +9,7 @@ import 'domain/services/galon_service.dart';
 import 'domain/services/purchase_service.dart';
 import 'domain/services/reports_service.dart';
 import 'domain/services/sales_service.dart';
+import 'ui/laporan_harian_screen.dart';
 import 'ui/pos_screen.dart';
 
 // --- Providers (Riverpod) ---------------------------------------------------
@@ -56,6 +58,13 @@ class AmdkPosApp extends ConsumerWidget {
       title: 'AMDK POS',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(colorSchemeSeed: Colors.blue, useMaterial3: true),
+      locale: const Locale('id', 'ID'),
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('id', 'ID'), Locale('en')],
       home: switch (role) {
         null => const RolePickerScreen(),
         AppRole.kasir => const PosScreen(),
@@ -134,6 +143,12 @@ class OwnerScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Owner — Laporan Hari Ini'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.event_note),
+            tooltip: 'Laporan Harian',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const LaporanHarianScreen())),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.invalidate(ownerSummaryProvider),

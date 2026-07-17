@@ -129,4 +129,40 @@ void main() {
     expect(b.full, 20); // wadah isi
     expect(b.empty, -20); // kosong ditukar ke agen
   });
+
+  test('laporan harian: rincian per produk & per kategori kas', () async {
+    final sales = SalesService(db);
+    final reports = ReportsService(db);
+    final gelas = await (db.select(db.products)
+          ..where((t) => t.category.equals('gelas'))
+          ..limit(1))
+        .getSingle();
+    final botol = await (db.select(db.products)
+          ..where((t) => t.category.equals('botol'))
+          ..limit(1))
+        .getSingle();
+
+    // Dua transaksi: gelas ×5, botol ×2, lalu gelas ×3 lagi (harus diagregasi).
+    await sales.recordSale(
+        lines: [SaleLine(productId: gelas.id, qtyBase: 5, price: gelas.sellPrice)]);
+    await sales.recordSale(lines: [
+      SaleLine(productId: botol.id, qtyBase: 2, price: botol.sellPrice),
+      SaleLine(productId: gelas.id, qtyBase: 3, price: gelas.sellPrice),
+    ]);
+
+    final r = await reports.dailyReport(DateTime.now());
+
+    // Per produk: gelas teragregasi jadi 8 pcs.
+    final gelasRow = r.byProduct.firstWhere((p) => p.name == gelas.name);
+    expect(gelasRow.qty, 8);
+    expect(gelasRow.revenue, gelas.sellPrice * 8);
+    expect(gelasRow.profit, (gelas.sellPrice - gelas.buyPrice) * 8);
+    // Urut omzet desc.
+    expect(r.byProduct.first.revenue >= r.byProduct.last.revenue, isTrue);
+
+    // Kas: semua penjualan masuk kategori 'penjualan'.
+    final jual = r.byCategory.firstWhere((c) => c.category == 'penjualan');
+    expect(jual.masuk, gelas.sellPrice * 8 + botol.sellPrice * 2);
+    expect(jual.keluar, 0);
+  });
 }

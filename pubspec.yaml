@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # Database lokal — sumber kebenaran, jalan penuh saat offline.
   drift: ^2.18.0
@@ -21,7 +23,7 @@ dependencies:
   # Sinkronisasi cloud (owner lihat laporan dari HP) — diaktifkan di Fase 2.
   supabase_flutter: ^2.5.6
 
-  intl: ^0.19.0
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
