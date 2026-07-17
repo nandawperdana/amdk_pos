@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart';
 import 'pos_screen.dart' show rupiah;
 
-const _account = 'kas';
+const _account = 'cash';
 
 final _openingBalanceProvider = FutureProvider.autoDispose(
     (ref) => ref.watch(cashierServiceProvider).openingBalance(account: _account));
@@ -12,14 +12,15 @@ final _openingBalanceProvider = FutureProvider.autoDispose(
 final _systemBalanceProvider = FutureProvider.autoDispose(
     (ref) => ref.watch(dbProvider).cashBalance(account: _account));
 
-class TutupKasirScreen extends ConsumerStatefulWidget {
-  const TutupKasirScreen({super.key});
+class CashierClosingScreen extends ConsumerStatefulWidget {
+  const CashierClosingScreen({super.key});
 
   @override
-  ConsumerState<TutupKasirScreen> createState() => _TutupKasirScreenState();
+  ConsumerState<CashierClosingScreen> createState() =>
+      _CashierClosingScreenState();
 }
 
-class _TutupKasirScreenState extends ConsumerState<TutupKasirScreen> {
+class _CashierClosingScreenState extends ConsumerState<CashierClosingScreen> {
   final _controller = TextEditingController();
   bool _saving = false;
 

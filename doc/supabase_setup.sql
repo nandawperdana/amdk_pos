@@ -22,7 +22,7 @@ create table if not exists products (
   name text, brand text, category text, base_unit text,
   pack_unit text, pack_size bigint,
   buy_price double precision, sell_price double precision,
-  is_galon smallint, active smallint,
+  is_gallon smallint, active smallint,
   primary key (device_id, id)
 );
 
@@ -80,7 +80,7 @@ create table if not exists cash_entries (
   primary key (device_id, id)
 );
 
-create table if not exists galon_ledger (
+create table if not exists gallon_ledger (
   device_id text not null, id bigint not null,
   date bigint, type text, d_full bigint, d_empty bigint, d_deposit bigint,
   customer_id bigint, ref_type text, ref_id bigint, note text,
@@ -105,7 +105,7 @@ declare t text;
 begin
   foreach t in array array[
     'products','suppliers','customers','purchases','purchase_items',
-    'sales','sale_items','stock_movements','cash_entries','galon_ledger',
+    'sales','sale_items','stock_movements','cash_entries','gallon_ledger',
     'cashier_closings'
   ] loop
     execute format('alter table %I enable row level security', t);

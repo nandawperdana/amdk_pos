@@ -6,30 +6,30 @@ import '../domain/services/purchase_service.dart';
 import '../main.dart';
 import 'pos_screen.dart' show activeProductsProvider, rupiah;
 
-class KulakanLine {
+class PurchaseCartLine {
   final Product product;
   int qty;
-  double price; // harga beli per base unit
-  bool tukarKosong; // hanya galon: kulakan isi dengan tukar kosong
+  double price; // buy price per base unit
+  bool swapEmpty; // gallon only: restock filled with an empty swap
 
-  KulakanLine(this.product)
+  PurchaseCartLine(this.product)
       : qty = 1,
         price = product.buyPrice,
-        tukarKosong = product.isGalon;
+        swapEmpty = product.isGallon;
 
   double get subtotal => qty * price;
 }
 
-class KulakanScreen extends ConsumerStatefulWidget {
-  const KulakanScreen({super.key});
+class PurchaseScreen extends ConsumerStatefulWidget {
+  const PurchaseScreen({super.key});
 
   @override
-  ConsumerState<KulakanScreen> createState() => _KulakanScreenState();
+  ConsumerState<PurchaseScreen> createState() => _PurchaseScreenState();
 }
 
-class _KulakanScreenState extends ConsumerState<KulakanScreen> {
-  final List<KulakanLine> _cart = [];
-  String _paymentStatus = 'lunas'; // 'lunas' | 'utang'
+class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
+  final List<PurchaseCartLine> _cart = [];
+  String _paymentStatus = 'paid'; // 'paid' | 'debt'
   bool _saving = false;
 
   double get _total => _cart.fold(0, (s, l) => s + l.subtotal);
@@ -40,12 +40,12 @@ class _KulakanScreenState extends ConsumerState<KulakanScreen> {
       if (existing.isNotEmpty) {
         existing.first.qty++;
       } else {
-        _cart.add(KulakanLine(p));
+        _cart.add(PurchaseCartLine(p));
       }
     });
   }
 
-  Future<void> _editPrice(KulakanLine l) async {
+  Future<void> _editPrice(PurchaseCartLine l) async {
     final controller = TextEditingController(text: l.price.toStringAsFixed(0));
     final result = await showDialog<double>(
       context: context,
@@ -76,9 +76,9 @@ class _KulakanScreenState extends ConsumerState<KulakanScreen> {
     setState(() => _saving = true);
     try {
       final purchases = ref.read(purchaseServiceProvider);
-      final galon = ref.read(galonServiceProvider);
+      final gallon = ref.read(gallonServiceProvider);
 
-      // Air (semua baris) lewat PurchaseService…
+      // Water (all lines) via PurchaseService…
       await purchases.recordPurchase(
         lines: [
           for (final l in _cart)
@@ -88,17 +88,16 @@ class _KulakanScreenState extends ConsumerState<KulakanScreen> {
         paymentStatus: _paymentStatus,
       );
 
-      // …wadah galon isi (kalau tukar kosong) lewat GalonService.
+      // …filled gallon containers (if swapping empties) via GallonService.
       for (final l in _cart) {
-        if (l.product.isGalon && l.tukarKosong) {
-          await galon.recordRestockExchange(qty: l.qty);
+        if (l.product.isGallon && l.swapEmpty) {
+          await gallon.recordRestockExchange(qty: l.qty);
         }
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'Kulakan tersimpan — ${rupiah.format(_total)} ($_paymentStatus)')));
+            content: Text('Kulakan tersimpan — ${rupiah.format(_total)}')));
         Navigator.pop(context);
       }
     } finally {
@@ -193,7 +192,7 @@ class _KulakanScreenState extends ConsumerState<KulakanScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Lunas / utang.
+          // Paid / debt.
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Row(
@@ -202,8 +201,8 @@ class _KulakanScreenState extends ConsumerState<KulakanScreen> {
                 const SizedBox(width: 12),
                 SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'lunas', label: Text('Lunas')),
-                    ButtonSegment(value: 'utang', label: Text('Utang')),
+                    ButtonSegment(value: 'paid', label: Text('Lunas')),
+                    ButtonSegment(value: 'debt', label: Text('Utang')),
                   ],
                   selected: {_paymentStatus},
                   onSelectionChanged: (s) =>
@@ -237,10 +236,10 @@ class _KulakanScreenState extends ConsumerState<KulakanScreen> {
                           Text('= ${rupiah.format(l.subtotal)}'),
                         ],
                       ),
-                      if (l.product.isGalon)
-                        _TukarChip(
-                          value: l.tukarKosong,
-                          onChanged: (v) => setState(() => l.tukarKosong = v),
+                      if (l.product.isGallon)
+                        _SwapChip(
+                          value: l.swapEmpty,
+                          onChanged: (v) => setState(() => l.swapEmpty = v),
                         ),
                     ],
                   ),
@@ -270,10 +269,10 @@ class _KulakanScreenState extends ConsumerState<KulakanScreen> {
   }
 }
 
-class _TukarChip extends StatelessWidget {
+class _SwapChip extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
-  const _TukarChip({required this.value, required this.onChanged});
+  const _SwapChip({required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {

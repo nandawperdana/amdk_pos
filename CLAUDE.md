@@ -28,8 +28,8 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
   baris ledger. Stok & saldo TIDAK disimpan sebagai angka — selalu dihitung
   dari SUM baris:
   - stok produk = `SUM(StockMovements.qtyBase)`
-  - saldo kas = `SUM(masuk) - SUM(keluar)` (`CashEntries`)
-  - saldo galon = `SUM(dFull/dEmpty/dDeposit)` (`GalonLedger`)
+  - saldo kas = `SUM(in) - SUM(out)` (`CashEntries`)
+  - saldo galon = `SUM(dFull/dEmpty/dDeposit)` (`GallonLedger`)
 - **Tulis transaksi secara atomik** dalam satu `db.transaction(...)`.
   Lihat `SalesService.recordSale` sebagai pola.
 - **Clean architecture** ringan: UI → service (domain) → Drift (data).
@@ -37,14 +37,15 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
 ## Aturan domain paling penting: galon = DUA barang
 
 - **Air** = barang dagangan, habis terjual → lewat stok produk biasa.
-- **Wadah galon** = aset berputar bernilai deposit → lewat `GalonLedger`,
+- **Wadah galon** = aset berputar bernilai deposit → lewat `GallonLedger`,
   TERPISAH dari stok produk.
-- Tiga saldo wadah: `isi` (siap jual), `kosong` (mau ditukar ke agen),
-  `beredar` (di tangan pelanggan = KEWAJIBAN, bukan omzet).
-- Uang deposit masuk kas dengan kategori `deposit_galon` — jangan dihitung
+- Tiga saldo wadah (kolom `GallonBalance`): `full` (isi, siap jual),
+  `empty` (kosong, mau ditukar ke agen), `depositOut` (beredar di tangan
+  pelanggan = KEWAJIBAN, bukan omzet).
+- Uang deposit masuk kas dengan kategori `gallon_deposit` — jangan dihitung
   sebagai pendapatan/laba.
-- Skenario yang sudah ada di `GalonService`: `recordExchange` (tukar),
-  `recordNewGalonSale` (pelanggan baru + deposit), `recordDepositReturn`
+- Skenario yang sudah ada di `GallonService`: `recordExchange` (tukar),
+  `recordNewGallonSale` (pelanggan baru + deposit), `recordDepositReturn`
   (tarik deposit/refund), `recordRestockExchange` (kulakan tukar).
 
 ## Keputusan yang sudah diambil (final)
@@ -87,16 +88,16 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
 - Seed 8 produk saat DB pertama dibuat (`AppDatabase._seedProducts`).
 - POS HP (`lib/ui/pos_screen.dart`) — grid tombol besar, galon wajib pilih
   tukar/baru+deposit, bayar tunai/qris/transfer. Menu lain di overflow.
-- Master produk CRUD (`lib/ui/master_produk_screen.dart` + `ProductService`) —
-  tambah/edit/nonaktif (soft-delete, tak hapus baris); `isGalon` diikat
-  kategori=='galon'.
-- Tutup kasir (`lib/ui/tutup_kasir_screen.dart` + `CashierService`) —
+- Master produk CRUD (`lib/ui/master_product_screen.dart` + `ProductService`) —
+  tambah/edit/nonaktif (soft-delete, tak hapus baris); `isGallon` diikat
+  kategori=='gallon'.
+- Tutup kasir (`lib/ui/cashier_closing_screen.dart` + `CashierService`) —
   `CashierClosings` append-only + baris penyesuaian selisih (schemaVersion 2).
-- Kulakan/pembelian (`lib/ui/kulakan_screen.dart` + `PurchaseService`) —
+- Kulakan/pembelian (`lib/ui/purchase_screen.dart` + `PurchaseService`) —
   stok masuk, kas keluar, lunas/utang, galon toggle tukar kosong.
-- Opname/penyesuaian stok (`lib/ui/opname_screen.dart` + `OpnameService`) —
+- Opname/penyesuaian stok (`lib/ui/stock_take_screen.dart` + `StockTakeService`) —
   hitungan fisik per produk + wadah galon; tulis baris SELISIH (append-only).
-- Laporan harian (`lib/ui/laporan_harian_screen.dart` + `ReportsService.
+- Laporan harian (`lib/ui/daily_report_screen.dart` + `ReportsService.
   dailyReport`) — date picker (id_ID via flutter_localizations), rincian
   penjualan per produk + arus kas per kategori.
 - Owner: dashboard hari ini dari DB lokal (cloud = Fase 2) + tombol ke
@@ -120,8 +121,16 @@ Fase 1 selesai. Lanjut ke Fase 2:
 
 ## Konvensi
 
-- Bahasa domain & komentar: Indonesia. Nama tipe/kelas: Inggris standar Dart.
+- **Kode & komentar: Inggris** (nama tipe/kelas/variabel/method, komentar, dan
+  nilai enum string yang tersimpan di DB — mis. `'cash'`, `'paid'`, `'in'`,
+  `'sale_exchange'`, kategori `'gallon'/'bottle'/'cup'/'other'`).
+- **Display copy tetap Bahasa Indonesia** — semua teks yang dilihat pengguna
+  (label, judul layar, tombol, snackbar). Nilai enum Inggris dipetakan ke label
+  Indonesia di layer UI (lihat `_paymentOptions` di `pos_screen.dart`,
+  `_categories`/`_categoryLabel` di `master_product_screen.dart`,
+  `_categoryLabel` di `daily_report_screen.dart`).
 - UI phone-first + responsif (siap tablet).
 - Uang: `double` untuk scaffold; pertimbangkan integer rupiah bila ingin hindari
   galat pembulatan.
-- Kategori enum ditulis sebagai string konstan (lihat komentar di `tables.dart`).
+- Nilai enum kategori ditulis sebagai string konstan (lihat komentar di
+  `tables.dart`).

@@ -6,18 +6,18 @@ import 'package:intl/intl.dart';
 import '../data/database/database.dart';
 import '../domain/services/sales_service.dart';
 import '../main.dart';
-import 'kulakan_screen.dart';
-import 'master_produk_screen.dart';
-import 'opname_screen.dart';
-import 'tutup_kasir_screen.dart';
+import 'cashier_closing_screen.dart';
+import 'master_product_screen.dart';
+import 'purchase_screen.dart';
+import 'stock_take_screen.dart';
 
-/// Nilai deposit galon default. Masih keputusan terbuka (seragam vs per merk)
-/// — untuk sekarang konstanta, bisa diubah kasir per transaksi.
-const double defaultGalonDeposit = 40000;
+/// Default gallon deposit. Still an open decision (uniform vs per brand) —
+/// a constant for now, editable by the cashier per transaction.
+const double defaultGallonDeposit = 40000;
 
 final rupiah = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
-/// Produk aktif, live dari DB.
+/// Active products, live from the DB.
 final activeProductsProvider = StreamProvider<List<Product>>((ref) {
   final db = ref.watch(dbProvider);
   return (db.select(db.products)
@@ -26,20 +26,28 @@ final activeProductsProvider = StreamProvider<List<Product>>((ref) {
       .watch();
 });
 
-/// Cara penjualan galon: pelanggan tukar galon kosong, atau pelanggan baru
-/// yang bayar deposit wadah.
-enum GalonMode { tukar, baru }
+/// Gallon selling mode: customer exchanges an empty, or a new customer pays a
+/// container deposit.
+enum GallonMode { exchange, newCustomer }
+
+/// Payment options: stored value + Indonesian display label.
+const _paymentOptions = [
+  (value: 'cash', label: 'Tunai'),
+  (value: 'qris', label: 'QRIS'),
+  (value: 'transfer', label: 'Transfer'),
+];
 
 class CartLine {
   final Product product;
   int qty;
-  final GalonMode? galonMode; // null untuk non-galon
-  final double deposit; // per galon, hanya untuk mode baru
+  final GallonMode? gallonMode; // null for non-gallon
+  final double deposit; // per gallon, only for newCustomer mode
 
-  CartLine(this.product, {this.qty = 1, this.galonMode, this.deposit = 0});
+  CartLine(this.product, {this.qty = 1, this.gallonMode, this.deposit = 0});
 
   double get subtotal => product.sellPrice * qty;
-  double get depositTotal => galonMode == GalonMode.baru ? deposit * qty : 0;
+  double get depositTotal =>
+      gallonMode == GallonMode.newCustomer ? deposit * qty : 0;
 }
 
 class PosScreen extends ConsumerStatefulWidget {
@@ -57,17 +65,17 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   double get _depositTotal => _cart.fold(0, (s, l) => s + l.depositTotal);
 
   // ---------------------------------------------------------------------
-  // Tambah ke keranjang
+  // Add to cart
   // ---------------------------------------------------------------------
 
   void _addProduct(Product p) async {
-    if (p.isGalon) {
-      final line = await _askGalonMode(p);
+    if (p.isGallon) {
+      final line = await _askGallonMode(p);
       if (line == null) return;
       setState(() => _cart.add(line));
     } else {
-      // Produk sama → tambah qty, jangan bikin baris baru.
-      final existing = _cart.where((l) => l.product.id == p.id && l.galonMode == null);
+      // Same product → bump qty, don't create a new line.
+      final existing = _cart.where((l) => l.product.id == p.id && l.gallonMode == null);
       setState(() {
         if (existing.isNotEmpty) {
           existing.first.qty++;
@@ -78,8 +86,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     }
   }
 
-  /// Galon wajib pilih mode: tukar (bawa kosong) atau baru (+ deposit).
-  Future<CartLine?> _askGalonMode(Product p) {
+  /// A gallon must pick a mode: exchange (brings an empty) or new (+ deposit).
+  Future<CartLine?> _askGallonMode(Product p) {
     return showModalBottomSheet<CartLine>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -97,7 +105,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   icon: const Icon(Icons.swap_horiz),
                   label: const Text('TUKAR — pelanggan bawa galon kosong'),
                   onPressed: () => Navigator.pop(
-                      ctx, CartLine(p, galonMode: GalonMode.tukar)),
+                      ctx, CartLine(p, gallonMode: GallonMode.exchange)),
                 ),
               ),
               const SizedBox(height: 8),
@@ -106,12 +114,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.add_circle_outline),
                   label: Text(
-                      'BARU — + deposit ${rupiah.format(defaultGalonDeposit)}'),
+                      'BARU — + deposit ${rupiah.format(defaultGallonDeposit)}'),
                   onPressed: () => Navigator.pop(
                       ctx,
                       CartLine(p,
-                          galonMode: GalonMode.baru,
-                          deposit: defaultGalonDeposit)),
+                          gallonMode: GallonMode.newCustomer,
+                          deposit: defaultGallonDeposit)),
                 ),
               ),
             ],
@@ -122,7 +130,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // Bayar
+  // Checkout
   // ---------------------------------------------------------------------
 
   Future<void> _checkout() async {
@@ -143,14 +151,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     '${rupiah.format(_depositTotal)} deposit galon)',
                     style: Theme.of(ctx).textTheme.bodyMedium),
               const SizedBox(height: 16),
-              for (final m in ['tunai', 'qris', 'transfer'])
+              for (final m in _paymentOptions)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: SizedBox(
                     height: 56,
                     child: FilledButton.tonal(
-                      onPressed: () => Navigator.pop(ctx, m),
-                      child: Text(m.toUpperCase()),
+                      onPressed: () => Navigator.pop(ctx, m.value),
+                      child: Text(m.label),
                     ),
                   ),
                 ),
@@ -164,15 +172,15 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     setState(() => _saving = true);
     try {
       final sales = ref.read(salesServiceProvider);
-      final galon = ref.read(galonServiceProvider);
-      // 'tunai' → akun kas; 'qris' → akun qris; 'transfer' → akun bank.
+      final gallon = ref.read(gallonServiceProvider);
+      // 'cash' → cash account; 'qris' → qris account; 'transfer' → bank account.
       final account = switch (method) {
         'qris' => 'qris',
         'transfer' => 'bank',
-        _ => 'kas',
+        _ => 'cash',
       };
 
-      // Air (semua baris) lewat SalesService…
+      // Water (all lines) via SalesService…
       final saleId = await sales.recordSale(
         lines: [
           for (final l in _cart)
@@ -185,15 +193,15 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         account: account,
       );
 
-      // …wadah galon lewat GalonService (dua barang, dua ledger).
+      // …gallon containers via GallonService (two goods, two ledgers).
       for (final l in _cart) {
-        switch (l.galonMode) {
-          case GalonMode.tukar:
-            await galon.recordExchange(qty: l.qty, saleId: saleId);
-          case GalonMode.baru:
-            await galon.recordNewGalonSale(
+        switch (l.gallonMode) {
+          case GallonMode.exchange:
+            await gallon.recordExchange(qty: l.qty, saleId: saleId);
+          case GallonMode.newCustomer:
+            await gallon.recordNewGallonSale(
                 qty: l.qty,
-                depositPerGalon: l.deposit,
+                depositPerGallon: l.deposit,
                 saleId: saleId,
                 account: account);
           case null:
@@ -204,7 +212,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(
-                'Tersimpan — ${rupiah.format(_total + _depositTotal)} ($method)')));
+                'Tersimpan — ${rupiah.format(_total + _depositTotal)}')));
         setState(_cart.clear);
       }
     } finally {
@@ -228,27 +236,27 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             icon: const Icon(Icons.add_shopping_cart_outlined),
             tooltip: 'Kulakan',
             onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const KulakanScreen())),
+                MaterialPageRoute(builder: (_) => const PurchaseScreen())),
           ),
           IconButton(
             icon: const Icon(Icons.point_of_sale_outlined),
             tooltip: 'Tutup Kasir',
             onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const TutupKasirScreen())),
+                MaterialPageRoute(builder: (_) => const CashierClosingScreen())),
           ),
           PopupMenuButton<VoidCallback>(
             onSelected: (fn) => fn(),
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const MasterProdukScreen())),
+                    MaterialPageRoute(builder: (_) => const MasterProductScreen())),
                 child: const ListTile(
                     leading: Icon(Icons.inventory_2_outlined),
                     title: Text('Master Produk')),
               ),
               PopupMenuItem(
                 value: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const OpnameScreen())),
+                    MaterialPageRoute(builder: (_) => const StockTakeScreen())),
                 child: const ListTile(
                     leading: Icon(Icons.fact_check_outlined),
                     title: Text('Opname Stok')),
@@ -272,8 +280,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               data: (list) => GridView.builder(
                 padding: const EdgeInsets.all(8),
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  // Phone-first: tombol besar (~min 150dp), otomatis nambah
-                  // kolom di layar lebar/tablet.
+                  // Phone-first: big buttons (~min 150dp), auto extra columns
+                  // on wide screens/tablets.
                   maxCrossAxisExtent: 180,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
@@ -320,9 +328,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         itemCount: _cart.length,
         itemBuilder: (_, i) {
           final l = _cart[i];
-          final label = switch (l.galonMode) {
-            GalonMode.tukar => ' (tukar)',
-            GalonMode.baru => ' (baru+deposit)',
+          final label = switch (l.gallonMode) {
+            GallonMode.exchange => ' (tukar)',
+            GallonMode.newCustomer => ' (baru+deposit)',
             null => '',
           };
           return ListTile(
@@ -361,7 +369,7 @@ class _ProductButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: product.isGalon ? scheme.primaryContainer : scheme.secondaryContainer,
+      color: product.isGallon ? scheme.primaryContainer : scheme.secondaryContainer,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),

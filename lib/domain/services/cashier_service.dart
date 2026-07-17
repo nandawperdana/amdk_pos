@@ -6,9 +6,9 @@ class CashierService {
   final AppDatabase db;
   CashierService(this.db);
 
-  /// Kas awal shift = hitungan fisik dari tutup kasir terakhir (atau 0
-  /// kalau belum pernah tutup kasir).
-  Future<double> openingBalance({String account = 'kas'}) async {
+  /// Opening cash for the shift = physical count from the last cashier closing
+  /// (or 0 if there has never been a closing).
+  Future<double> openingBalance({String account = 'cash'}) async {
     final last = await (db.select(db.cashierClosings)
           ..where((c) => c.account.equals(account))
           ..orderBy([(c) => OrderingTerm.desc(c.closedAt)])
@@ -17,13 +17,12 @@ class CashierService {
     return last?.physicalCount ?? 0;
   }
 
-  /// Tutup kasir: catat snapshot (saldo sistem vs hitungan fisik). Kalau
-  /// beda, tambahkan baris penyesuaian di CashEntries — TIDAK PERNAH
-  /// mengubah baris lama — supaya saldo berjalan berikutnya ikut uang
-  /// fisik yang benar-benar ada di laci.
+  /// Cashier closing: record a snapshot (system balance vs physical count).
+  /// If they differ, add an adjustment row in CashEntries — NEVER edit an old
+  /// row — so the next running balance follows the actual cash in the till.
   Future<int> recordClosing({
     required double physicalCount,
-    String account = 'kas',
+    String account = 'cash',
     String? note,
   }) async {
     return db.transaction(() async {
@@ -43,9 +42,9 @@ class CashierService {
       if (diff != 0) {
         await db.into(db.cashEntries).insert(
               CashEntriesCompanion.insert(
-                direction: diff > 0 ? 'masuk' : 'keluar',
+                direction: diff > 0 ? 'in' : 'out',
                 amount: diff.abs(),
-                category: 'penyesuaian',
+                category: 'adjustment',
                 account: Value(account),
                 refType: const Value('closing'),
                 refId: Value(id),

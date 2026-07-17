@@ -36,7 +36,7 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       'category', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: false,
-      defaultValue: const Constant('lainnya'));
+      defaultValue: const Constant('other'));
   static const VerificationMeta _baseUnitMeta =
       const VerificationMeta('baseUnit');
   @override
@@ -75,15 +75,15 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       type: DriftSqlType.double,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
-  static const VerificationMeta _isGalonMeta =
-      const VerificationMeta('isGalon');
+  static const VerificationMeta _isGallonMeta =
+      const VerificationMeta('isGallon');
   @override
-  late final GeneratedColumn<bool> isGalon = GeneratedColumn<bool>(
-      'is_galon', aliasedName, false,
+  late final GeneratedColumn<bool> isGallon = GeneratedColumn<bool>(
+      'is_gallon', aliasedName, false,
       type: DriftSqlType.bool,
       requiredDuringInsert: false,
       defaultConstraints:
-          GeneratedColumn.constraintIsAlways('CHECK ("is_galon" IN (0, 1))'),
+          GeneratedColumn.constraintIsAlways('CHECK ("is_gallon" IN (0, 1))'),
       defaultValue: const Constant(false));
   static const VerificationMeta _activeMeta = const VerificationMeta('active');
   @override
@@ -105,7 +105,7 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         packSize,
         buyPrice,
         sellPrice,
-        isGalon,
+        isGallon,
         active
       ];
   @override
@@ -155,9 +155,9 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       context.handle(_sellPriceMeta,
           sellPrice.isAcceptableOrUnknown(data['sell_price']!, _sellPriceMeta));
     }
-    if (data.containsKey('is_galon')) {
-      context.handle(_isGalonMeta,
-          isGalon.isAcceptableOrUnknown(data['is_galon']!, _isGalonMeta));
+    if (data.containsKey('is_gallon')) {
+      context.handle(_isGallonMeta,
+          isGallon.isAcceptableOrUnknown(data['is_gallon']!, _isGallonMeta));
     }
     if (data.containsKey('active')) {
       context.handle(_activeMeta,
@@ -190,8 +190,8 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
           .read(DriftSqlType.double, data['${effectivePrefix}buy_price'])!,
       sellPrice: attachedDatabase.typeMapping
           .read(DriftSqlType.double, data['${effectivePrefix}sell_price'])!,
-      isGalon: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}is_galon'])!,
+      isGallon: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}is_gallon'])!,
       active: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}active'])!,
     );
@@ -208,21 +208,22 @@ class Product extends DataClass implements Insertable<Product> {
   final String name;
   final String brand;
 
-  /// 'galon' | 'botol' | 'gelas' | 'lainnya'
+  /// 'gallon' | 'bottle' | 'cup' | 'other'
   final String category;
 
-  /// Satuan dasar untuk semua perhitungan stok, mis. 'pcs'.
+  /// Base unit for all stock math, e.g. 'pcs'.
   final String baseUnit;
 
-  /// Satuan besar opsional, mis. 'dus'. packSize = isi per dus.
+  /// Optional pack unit, e.g. 'box'. packSize = base units per pack.
   final String? packUnit;
   final int packSize;
   final double buyPrice;
   final double sellPrice;
 
-  /// true = produk galon (punya WADAH yang berputar / deposit).
-  /// Airnya tetap lewat stok produk biasa; wadahnya lewat GalonLedger.
-  final bool isGalon;
+  /// true = gallon product (has a circulating CONTAINER / deposit).
+  /// The water still flows through normal product stock; the container
+  /// flows through GallonLedger.
+  final bool isGallon;
   final bool active;
   const Product(
       {required this.id,
@@ -234,7 +235,7 @@ class Product extends DataClass implements Insertable<Product> {
       required this.packSize,
       required this.buyPrice,
       required this.sellPrice,
-      required this.isGalon,
+      required this.isGallon,
       required this.active});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -250,7 +251,7 @@ class Product extends DataClass implements Insertable<Product> {
     map['pack_size'] = Variable<int>(packSize);
     map['buy_price'] = Variable<double>(buyPrice);
     map['sell_price'] = Variable<double>(sellPrice);
-    map['is_galon'] = Variable<bool>(isGalon);
+    map['is_gallon'] = Variable<bool>(isGallon);
     map['active'] = Variable<bool>(active);
     return map;
   }
@@ -268,7 +269,7 @@ class Product extends DataClass implements Insertable<Product> {
       packSize: Value(packSize),
       buyPrice: Value(buyPrice),
       sellPrice: Value(sellPrice),
-      isGalon: Value(isGalon),
+      isGallon: Value(isGallon),
       active: Value(active),
     );
   }
@@ -286,7 +287,7 @@ class Product extends DataClass implements Insertable<Product> {
       packSize: serializer.fromJson<int>(json['packSize']),
       buyPrice: serializer.fromJson<double>(json['buyPrice']),
       sellPrice: serializer.fromJson<double>(json['sellPrice']),
-      isGalon: serializer.fromJson<bool>(json['isGalon']),
+      isGallon: serializer.fromJson<bool>(json['isGallon']),
       active: serializer.fromJson<bool>(json['active']),
     );
   }
@@ -303,7 +304,7 @@ class Product extends DataClass implements Insertable<Product> {
       'packSize': serializer.toJson<int>(packSize),
       'buyPrice': serializer.toJson<double>(buyPrice),
       'sellPrice': serializer.toJson<double>(sellPrice),
-      'isGalon': serializer.toJson<bool>(isGalon),
+      'isGallon': serializer.toJson<bool>(isGallon),
       'active': serializer.toJson<bool>(active),
     };
   }
@@ -318,7 +319,7 @@ class Product extends DataClass implements Insertable<Product> {
           int? packSize,
           double? buyPrice,
           double? sellPrice,
-          bool? isGalon,
+          bool? isGallon,
           bool? active}) =>
       Product(
         id: id ?? this.id,
@@ -330,7 +331,7 @@ class Product extends DataClass implements Insertable<Product> {
         packSize: packSize ?? this.packSize,
         buyPrice: buyPrice ?? this.buyPrice,
         sellPrice: sellPrice ?? this.sellPrice,
-        isGalon: isGalon ?? this.isGalon,
+        isGallon: isGallon ?? this.isGallon,
         active: active ?? this.active,
       );
   Product copyWithCompanion(ProductsCompanion data) {
@@ -344,7 +345,7 @@ class Product extends DataClass implements Insertable<Product> {
       packSize: data.packSize.present ? data.packSize.value : this.packSize,
       buyPrice: data.buyPrice.present ? data.buyPrice.value : this.buyPrice,
       sellPrice: data.sellPrice.present ? data.sellPrice.value : this.sellPrice,
-      isGalon: data.isGalon.present ? data.isGalon.value : this.isGalon,
+      isGallon: data.isGallon.present ? data.isGallon.value : this.isGallon,
       active: data.active.present ? data.active.value : this.active,
     );
   }
@@ -361,7 +362,7 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('packSize: $packSize, ')
           ..write('buyPrice: $buyPrice, ')
           ..write('sellPrice: $sellPrice, ')
-          ..write('isGalon: $isGalon, ')
+          ..write('isGallon: $isGallon, ')
           ..write('active: $active')
           ..write(')'))
         .toString();
@@ -369,7 +370,7 @@ class Product extends DataClass implements Insertable<Product> {
 
   @override
   int get hashCode => Object.hash(id, name, brand, category, baseUnit, packUnit,
-      packSize, buyPrice, sellPrice, isGalon, active);
+      packSize, buyPrice, sellPrice, isGallon, active);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -383,7 +384,7 @@ class Product extends DataClass implements Insertable<Product> {
           other.packSize == this.packSize &&
           other.buyPrice == this.buyPrice &&
           other.sellPrice == this.sellPrice &&
-          other.isGalon == this.isGalon &&
+          other.isGallon == this.isGallon &&
           other.active == this.active);
 }
 
@@ -397,7 +398,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<int> packSize;
   final Value<double> buyPrice;
   final Value<double> sellPrice;
-  final Value<bool> isGalon;
+  final Value<bool> isGallon;
   final Value<bool> active;
   const ProductsCompanion({
     this.id = const Value.absent(),
@@ -409,7 +410,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.packSize = const Value.absent(),
     this.buyPrice = const Value.absent(),
     this.sellPrice = const Value.absent(),
-    this.isGalon = const Value.absent(),
+    this.isGallon = const Value.absent(),
     this.active = const Value.absent(),
   });
   ProductsCompanion.insert({
@@ -422,7 +423,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.packSize = const Value.absent(),
     this.buyPrice = const Value.absent(),
     this.sellPrice = const Value.absent(),
-    this.isGalon = const Value.absent(),
+    this.isGallon = const Value.absent(),
     this.active = const Value.absent(),
   }) : name = Value(name);
   static Insertable<Product> custom({
@@ -435,7 +436,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<int>? packSize,
     Expression<double>? buyPrice,
     Expression<double>? sellPrice,
-    Expression<bool>? isGalon,
+    Expression<bool>? isGallon,
     Expression<bool>? active,
   }) {
     return RawValuesInsertable({
@@ -448,7 +449,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (packSize != null) 'pack_size': packSize,
       if (buyPrice != null) 'buy_price': buyPrice,
       if (sellPrice != null) 'sell_price': sellPrice,
-      if (isGalon != null) 'is_galon': isGalon,
+      if (isGallon != null) 'is_gallon': isGallon,
       if (active != null) 'active': active,
     });
   }
@@ -463,7 +464,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       Value<int>? packSize,
       Value<double>? buyPrice,
       Value<double>? sellPrice,
-      Value<bool>? isGalon,
+      Value<bool>? isGallon,
       Value<bool>? active}) {
     return ProductsCompanion(
       id: id ?? this.id,
@@ -475,7 +476,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       packSize: packSize ?? this.packSize,
       buyPrice: buyPrice ?? this.buyPrice,
       sellPrice: sellPrice ?? this.sellPrice,
-      isGalon: isGalon ?? this.isGalon,
+      isGallon: isGallon ?? this.isGallon,
       active: active ?? this.active,
     );
   }
@@ -510,8 +511,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (sellPrice.present) {
       map['sell_price'] = Variable<double>(sellPrice.value);
     }
-    if (isGalon.present) {
-      map['is_galon'] = Variable<bool>(isGalon.value);
+    if (isGallon.present) {
+      map['is_gallon'] = Variable<bool>(isGallon.value);
     }
     if (active.present) {
       map['active'] = Variable<bool>(active.value);
@@ -531,7 +532,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('packSize: $packSize, ')
           ..write('buyPrice: $buyPrice, ')
           ..write('sellPrice: $sellPrice, ')
-          ..write('isGalon: $isGalon, ')
+          ..write('isGallon: $isGallon, ')
           ..write('active: $active')
           ..write(')'))
         .toString();
@@ -817,7 +818,7 @@ class $CustomersTable extends Customers
       'type', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: false,
-      defaultValue: const Constant('umum'));
+      defaultValue: const Constant('general'));
   static const VerificationMeta _phoneMeta = const VerificationMeta('phone');
   @override
   late final GeneratedColumn<String> phone = GeneratedColumn<String>(
@@ -882,7 +883,7 @@ class Customer extends DataClass implements Insertable<Customer> {
   final int id;
   final String name;
 
-  /// 'umum' | 'langganan' | 'reseller'
+  /// 'general' | 'subscriber' | 'reseller'
   final String type;
   final String? phone;
   const Customer(
@@ -1090,7 +1091,7 @@ class $PurchasesTable extends Purchases
       'payment_status', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: false,
-      defaultValue: const Constant('lunas'));
+      defaultValue: const Constant('paid'));
   static const VerificationMeta _noteMeta = const VerificationMeta('note');
   @override
   late final GeneratedColumn<String> note = GeneratedColumn<String>(
@@ -1174,7 +1175,7 @@ class Purchase extends DataClass implements Insertable<Purchase> {
   final DateTime date;
   final double totalAmount;
 
-  /// 'lunas' | 'utang'
+  /// 'paid' | 'debt'
   final String paymentStatus;
   final String? note;
   const Purchase(
@@ -1773,7 +1774,7 @@ class $SalesTable extends Sales with TableInfo<$SalesTable, Sale> {
       'payment_method', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: false,
-      defaultValue: const Constant('tunai'));
+      defaultValue: const Constant('cash'));
   static const VerificationMeta _paymentStatusMeta =
       const VerificationMeta('paymentStatus');
   @override
@@ -1781,7 +1782,7 @@ class $SalesTable extends Sales with TableInfo<$SalesTable, Sale> {
       'payment_status', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: false,
-      defaultValue: const Constant('lunas'));
+      defaultValue: const Constant('paid'));
   static const VerificationMeta _noteMeta = const VerificationMeta('note');
   @override
   late final GeneratedColumn<String> note = GeneratedColumn<String>(
@@ -1873,10 +1874,10 @@ class Sale extends DataClass implements Insertable<Sale> {
   final DateTime date;
   final double totalAmount;
 
-  /// 'tunai' | 'qris' | 'transfer'
+  /// 'cash' | 'qris' | 'transfer'
   final String paymentMethod;
 
-  /// 'lunas' | 'piutang'
+  /// 'paid' | 'receivable'
   final String paymentStatus;
   final String? note;
   const Sale(
@@ -2596,10 +2597,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
   final int productId;
   final DateTime date;
 
-  /// 'pembelian' | 'penjualan' | 'penyesuaian' | 'retur'
+  /// 'purchase' | 'sale' | 'adjustment' | 'return'
   final String type;
 
-  /// Bertanda: + masuk, - keluar (dalam base unit).
+  /// Signed: + in, - out (in base units).
   final int qtyBase;
   final String? refType;
   final int? refId;
@@ -2908,7 +2909,7 @@ class $CashEntriesTable extends CashEntries
       'account', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: false,
-      defaultValue: const Constant('kas'));
+      defaultValue: const Constant('cash'));
   static const VerificationMeta _refTypeMeta =
       const VerificationMeta('refType');
   @override
@@ -3019,15 +3020,15 @@ class CashEntry extends DataClass implements Insertable<CashEntry> {
   final int id;
   final DateTime date;
 
-  /// 'masuk' | 'keluar'
+  /// 'in' | 'out'
   final String direction;
   final double amount;
 
-  /// 'penjualan' | 'pembelian' | 'biaya' | 'modal' | 'prive' | 'deposit_galon'
-  /// | 'penyesuaian' (selisih tutup kasir, lihat CashierClosings)
+  /// 'sale' | 'purchase' | 'expense' | 'capital' | 'drawing' | 'gallon_deposit'
+  /// | 'adjustment' (cashier-closing difference, see CashierClosings)
   final String category;
 
-  /// 'kas' | 'bank' | 'qris'
+  /// 'cash' | 'bank' | 'qris'
   final String account;
   final String? refType;
   final int? refId;
@@ -3311,12 +3312,12 @@ class CashEntriesCompanion extends UpdateCompanion<CashEntry> {
   }
 }
 
-class $GalonLedgerTable extends GalonLedger
-    with TableInfo<$GalonLedgerTable, GalonLedgerData> {
+class $GallonLedgerTable extends GallonLedger
+    with TableInfo<$GallonLedgerTable, GallonLedgerData> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $GalonLedgerTable(this.attachedDatabase, [this._alias]);
+  $GallonLedgerTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
@@ -3399,9 +3400,9 @@ class $GalonLedgerTable extends GalonLedger
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'galon_ledger';
+  static const String $name = 'gallon_ledger';
   @override
-  VerificationContext validateIntegrity(Insertable<GalonLedgerData> instance,
+  VerificationContext validateIntegrity(Insertable<GallonLedgerData> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
@@ -3454,9 +3455,9 @@ class $GalonLedgerTable extends GalonLedger
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  GalonLedgerData map(Map<String, dynamic> data, {String? tablePrefix}) {
+  GallonLedgerData map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return GalonLedgerData(
+    return GallonLedgerData(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       date: attachedDatabase.typeMapping
@@ -3481,16 +3482,17 @@ class $GalonLedgerTable extends GalonLedger
   }
 
   @override
-  $GalonLedgerTable createAlias(String alias) {
-    return $GalonLedgerTable(attachedDatabase, alias);
+  $GallonLedgerTable createAlias(String alias) {
+    return $GallonLedgerTable(attachedDatabase, alias);
   }
 }
 
-class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
+class GallonLedgerData extends DataClass
+    implements Insertable<GallonLedgerData> {
   final int id;
   final DateTime date;
 
-  /// 'kulakan' | 'jual_tukar' | 'jual_baru' | 'deposit_kembali' | 'penyesuaian'
+  /// 'restock' | 'sale_exchange' | 'sale_new' | 'deposit_return' | 'adjustment'
   final String type;
   final int dFull;
   final int dEmpty;
@@ -3499,7 +3501,7 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
   final String? refType;
   final int? refId;
   final String? note;
-  const GalonLedgerData(
+  const GallonLedgerData(
       {required this.id,
       required this.date,
       required this.type,
@@ -3534,8 +3536,8 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
     return map;
   }
 
-  GalonLedgerCompanion toCompanion(bool nullToAbsent) {
-    return GalonLedgerCompanion(
+  GallonLedgerCompanion toCompanion(bool nullToAbsent) {
+    return GallonLedgerCompanion(
       id: Value(id),
       date: Value(date),
       type: Value(type),
@@ -3554,10 +3556,10 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
     );
   }
 
-  factory GalonLedgerData.fromJson(Map<String, dynamic> json,
+  factory GallonLedgerData.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return GalonLedgerData(
+    return GallonLedgerData(
       id: serializer.fromJson<int>(json['id']),
       date: serializer.fromJson<DateTime>(json['date']),
       type: serializer.fromJson<String>(json['type']),
@@ -3587,7 +3589,7 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
     };
   }
 
-  GalonLedgerData copyWith(
+  GallonLedgerData copyWith(
           {int? id,
           DateTime? date,
           String? type,
@@ -3598,7 +3600,7 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
           Value<String?> refType = const Value.absent(),
           Value<int?> refId = const Value.absent(),
           Value<String?> note = const Value.absent()}) =>
-      GalonLedgerData(
+      GallonLedgerData(
         id: id ?? this.id,
         date: date ?? this.date,
         type: type ?? this.type,
@@ -3610,8 +3612,8 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
         refId: refId.present ? refId.value : this.refId,
         note: note.present ? note.value : this.note,
       );
-  GalonLedgerData copyWithCompanion(GalonLedgerCompanion data) {
-    return GalonLedgerData(
+  GallonLedgerData copyWithCompanion(GallonLedgerCompanion data) {
+    return GallonLedgerData(
       id: data.id.present ? data.id.value : this.id,
       date: data.date.present ? data.date.value : this.date,
       type: data.type.present ? data.type.value : this.type,
@@ -3628,7 +3630,7 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
 
   @override
   String toString() {
-    return (StringBuffer('GalonLedgerData(')
+    return (StringBuffer('GallonLedgerData(')
           ..write('id: $id, ')
           ..write('date: $date, ')
           ..write('type: $type, ')
@@ -3649,7 +3651,7 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is GalonLedgerData &&
+      (other is GallonLedgerData &&
           other.id == this.id &&
           other.date == this.date &&
           other.type == this.type &&
@@ -3662,7 +3664,7 @@ class GalonLedgerData extends DataClass implements Insertable<GalonLedgerData> {
           other.note == this.note);
 }
 
-class GalonLedgerCompanion extends UpdateCompanion<GalonLedgerData> {
+class GallonLedgerCompanion extends UpdateCompanion<GallonLedgerData> {
   final Value<int> id;
   final Value<DateTime> date;
   final Value<String> type;
@@ -3673,7 +3675,7 @@ class GalonLedgerCompanion extends UpdateCompanion<GalonLedgerData> {
   final Value<String?> refType;
   final Value<int?> refId;
   final Value<String?> note;
-  const GalonLedgerCompanion({
+  const GallonLedgerCompanion({
     this.id = const Value.absent(),
     this.date = const Value.absent(),
     this.type = const Value.absent(),
@@ -3685,7 +3687,7 @@ class GalonLedgerCompanion extends UpdateCompanion<GalonLedgerData> {
     this.refId = const Value.absent(),
     this.note = const Value.absent(),
   });
-  GalonLedgerCompanion.insert({
+  GallonLedgerCompanion.insert({
     this.id = const Value.absent(),
     this.date = const Value.absent(),
     required String type,
@@ -3697,7 +3699,7 @@ class GalonLedgerCompanion extends UpdateCompanion<GalonLedgerData> {
     this.refId = const Value.absent(),
     this.note = const Value.absent(),
   }) : type = Value(type);
-  static Insertable<GalonLedgerData> custom({
+  static Insertable<GallonLedgerData> custom({
     Expression<int>? id,
     Expression<DateTime>? date,
     Expression<String>? type,
@@ -3723,7 +3725,7 @@ class GalonLedgerCompanion extends UpdateCompanion<GalonLedgerData> {
     });
   }
 
-  GalonLedgerCompanion copyWith(
+  GallonLedgerCompanion copyWith(
       {Value<int>? id,
       Value<DateTime>? date,
       Value<String>? type,
@@ -3734,7 +3736,7 @@ class GalonLedgerCompanion extends UpdateCompanion<GalonLedgerData> {
       Value<String?>? refType,
       Value<int?>? refId,
       Value<String?>? note}) {
-    return GalonLedgerCompanion(
+    return GallonLedgerCompanion(
       id: id ?? this.id,
       date: date ?? this.date,
       type: type ?? this.type,
@@ -3786,7 +3788,7 @@ class GalonLedgerCompanion extends UpdateCompanion<GalonLedgerData> {
 
   @override
   String toString() {
-    return (StringBuffer('GalonLedgerCompanion(')
+    return (StringBuffer('GallonLedgerCompanion(')
           ..write('id: $id, ')
           ..write('date: $date, ')
           ..write('type: $type, ')
@@ -3832,7 +3834,7 @@ class $CashierClosingsTable extends CashierClosings
       'account', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: false,
-      defaultValue: const Constant('kas'));
+      defaultValue: const Constant('cash'));
   static const VerificationMeta _systemBalanceMeta =
       const VerificationMeta('systemBalance');
   @override
@@ -4384,7 +4386,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $SaleItemsTable saleItems = $SaleItemsTable(this);
   late final $StockMovementsTable stockMovements = $StockMovementsTable(this);
   late final $CashEntriesTable cashEntries = $CashEntriesTable(this);
-  late final $GalonLedgerTable galonLedger = $GalonLedgerTable(this);
+  late final $GallonLedgerTable gallonLedger = $GallonLedgerTable(this);
   late final $CashierClosingsTable cashierClosings =
       $CashierClosingsTable(this);
   late final $SyncCursorsTable syncCursors = $SyncCursorsTable(this);
@@ -4402,7 +4404,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         saleItems,
         stockMovements,
         cashEntries,
-        galonLedger,
+        gallonLedger,
         cashierClosings,
         syncCursors
       ];
@@ -4418,7 +4420,7 @@ typedef $$ProductsTableCreateCompanionBuilder = ProductsCompanion Function({
   Value<int> packSize,
   Value<double> buyPrice,
   Value<double> sellPrice,
-  Value<bool> isGalon,
+  Value<bool> isGallon,
   Value<bool> active,
 });
 typedef $$ProductsTableUpdateCompanionBuilder = ProductsCompanion Function({
@@ -4431,7 +4433,7 @@ typedef $$ProductsTableUpdateCompanionBuilder = ProductsCompanion Function({
   Value<int> packSize,
   Value<double> buyPrice,
   Value<double> sellPrice,
-  Value<bool> isGalon,
+  Value<bool> isGallon,
   Value<bool> active,
 });
 
@@ -4471,8 +4473,8 @@ class $$ProductsTableFilterComposer
   ColumnFilters<double> get sellPrice => $composableBuilder(
       column: $table.sellPrice, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get isGalon => $composableBuilder(
-      column: $table.isGalon, builder: (column) => ColumnFilters(column));
+  ColumnFilters<bool> get isGallon => $composableBuilder(
+      column: $table.isGallon, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<bool> get active => $composableBuilder(
       column: $table.active, builder: (column) => ColumnFilters(column));
@@ -4514,8 +4516,8 @@ class $$ProductsTableOrderingComposer
   ColumnOrderings<double> get sellPrice => $composableBuilder(
       column: $table.sellPrice, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get isGalon => $composableBuilder(
-      column: $table.isGalon, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<bool> get isGallon => $composableBuilder(
+      column: $table.isGallon, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<bool> get active => $composableBuilder(
       column: $table.active, builder: (column) => ColumnOrderings(column));
@@ -4557,8 +4559,8 @@ class $$ProductsTableAnnotationComposer
   GeneratedColumn<double> get sellPrice =>
       $composableBuilder(column: $table.sellPrice, builder: (column) => column);
 
-  GeneratedColumn<bool> get isGalon =>
-      $composableBuilder(column: $table.isGalon, builder: (column) => column);
+  GeneratedColumn<bool> get isGallon =>
+      $composableBuilder(column: $table.isGallon, builder: (column) => column);
 
   GeneratedColumn<bool> get active =>
       $composableBuilder(column: $table.active, builder: (column) => column);
@@ -4596,7 +4598,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             Value<int> packSize = const Value.absent(),
             Value<double> buyPrice = const Value.absent(),
             Value<double> sellPrice = const Value.absent(),
-            Value<bool> isGalon = const Value.absent(),
+            Value<bool> isGallon = const Value.absent(),
             Value<bool> active = const Value.absent(),
           }) =>
               ProductsCompanion(
@@ -4609,7 +4611,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             packSize: packSize,
             buyPrice: buyPrice,
             sellPrice: sellPrice,
-            isGalon: isGalon,
+            isGallon: isGallon,
             active: active,
           ),
           createCompanionCallback: ({
@@ -4622,7 +4624,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             Value<int> packSize = const Value.absent(),
             Value<double> buyPrice = const Value.absent(),
             Value<double> sellPrice = const Value.absent(),
-            Value<bool> isGalon = const Value.absent(),
+            Value<bool> isGallon = const Value.absent(),
             Value<bool> active = const Value.absent(),
           }) =>
               ProductsCompanion.insert(
@@ -4635,7 +4637,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             packSize: packSize,
             buyPrice: buyPrice,
             sellPrice: sellPrice,
-            isGalon: isGalon,
+            isGallon: isGallon,
             active: active,
           ),
           withReferenceMapper: (p0) => p0
@@ -6100,7 +6102,7 @@ typedef $$CashEntriesTableProcessedTableManager = ProcessedTableManager<
     (CashEntry, BaseReferences<_$AppDatabase, $CashEntriesTable, CashEntry>),
     CashEntry,
     PrefetchHooks Function()>;
-typedef $$GalonLedgerTableCreateCompanionBuilder = GalonLedgerCompanion
+typedef $$GallonLedgerTableCreateCompanionBuilder = GallonLedgerCompanion
     Function({
   Value<int> id,
   Value<DateTime> date,
@@ -6113,7 +6115,7 @@ typedef $$GalonLedgerTableCreateCompanionBuilder = GalonLedgerCompanion
   Value<int?> refId,
   Value<String?> note,
 });
-typedef $$GalonLedgerTableUpdateCompanionBuilder = GalonLedgerCompanion
+typedef $$GallonLedgerTableUpdateCompanionBuilder = GallonLedgerCompanion
     Function({
   Value<int> id,
   Value<DateTime> date,
@@ -6127,9 +6129,9 @@ typedef $$GalonLedgerTableUpdateCompanionBuilder = GalonLedgerCompanion
   Value<String?> note,
 });
 
-class $$GalonLedgerTableFilterComposer
-    extends Composer<_$AppDatabase, $GalonLedgerTable> {
-  $$GalonLedgerTableFilterComposer({
+class $$GallonLedgerTableFilterComposer
+    extends Composer<_$AppDatabase, $GallonLedgerTable> {
+  $$GallonLedgerTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -6167,9 +6169,9 @@ class $$GalonLedgerTableFilterComposer
       column: $table.note, builder: (column) => ColumnFilters(column));
 }
 
-class $$GalonLedgerTableOrderingComposer
-    extends Composer<_$AppDatabase, $GalonLedgerTable> {
-  $$GalonLedgerTableOrderingComposer({
+class $$GallonLedgerTableOrderingComposer
+    extends Composer<_$AppDatabase, $GallonLedgerTable> {
+  $$GallonLedgerTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -6207,9 +6209,9 @@ class $$GalonLedgerTableOrderingComposer
       column: $table.note, builder: (column) => ColumnOrderings(column));
 }
 
-class $$GalonLedgerTableAnnotationComposer
-    extends Composer<_$AppDatabase, $GalonLedgerTable> {
-  $$GalonLedgerTableAnnotationComposer({
+class $$GallonLedgerTableAnnotationComposer
+    extends Composer<_$AppDatabase, $GallonLedgerTable> {
+  $$GallonLedgerTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -6247,31 +6249,31 @@ class $$GalonLedgerTableAnnotationComposer
       $composableBuilder(column: $table.note, builder: (column) => column);
 }
 
-class $$GalonLedgerTableTableManager extends RootTableManager<
+class $$GallonLedgerTableTableManager extends RootTableManager<
     _$AppDatabase,
-    $GalonLedgerTable,
-    GalonLedgerData,
-    $$GalonLedgerTableFilterComposer,
-    $$GalonLedgerTableOrderingComposer,
-    $$GalonLedgerTableAnnotationComposer,
-    $$GalonLedgerTableCreateCompanionBuilder,
-    $$GalonLedgerTableUpdateCompanionBuilder,
+    $GallonLedgerTable,
+    GallonLedgerData,
+    $$GallonLedgerTableFilterComposer,
+    $$GallonLedgerTableOrderingComposer,
+    $$GallonLedgerTableAnnotationComposer,
+    $$GallonLedgerTableCreateCompanionBuilder,
+    $$GallonLedgerTableUpdateCompanionBuilder,
     (
-      GalonLedgerData,
-      BaseReferences<_$AppDatabase, $GalonLedgerTable, GalonLedgerData>
+      GallonLedgerData,
+      BaseReferences<_$AppDatabase, $GallonLedgerTable, GallonLedgerData>
     ),
-    GalonLedgerData,
+    GallonLedgerData,
     PrefetchHooks Function()> {
-  $$GalonLedgerTableTableManager(_$AppDatabase db, $GalonLedgerTable table)
+  $$GallonLedgerTableTableManager(_$AppDatabase db, $GallonLedgerTable table)
       : super(TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$GalonLedgerTableFilterComposer($db: db, $table: table),
+              $$GallonLedgerTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$GalonLedgerTableOrderingComposer($db: db, $table: table),
+              $$GallonLedgerTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$GalonLedgerTableAnnotationComposer($db: db, $table: table),
+              $$GallonLedgerTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
             Value<DateTime> date = const Value.absent(),
@@ -6284,7 +6286,7 @@ class $$GalonLedgerTableTableManager extends RootTableManager<
             Value<int?> refId = const Value.absent(),
             Value<String?> note = const Value.absent(),
           }) =>
-              GalonLedgerCompanion(
+              GallonLedgerCompanion(
             id: id,
             date: date,
             type: type,
@@ -6308,7 +6310,7 @@ class $$GalonLedgerTableTableManager extends RootTableManager<
             Value<int?> refId = const Value.absent(),
             Value<String?> note = const Value.absent(),
           }) =>
-              GalonLedgerCompanion.insert(
+              GallonLedgerCompanion.insert(
             id: id,
             date: date,
             type: type,
@@ -6327,20 +6329,20 @@ class $$GalonLedgerTableTableManager extends RootTableManager<
         ));
 }
 
-typedef $$GalonLedgerTableProcessedTableManager = ProcessedTableManager<
+typedef $$GallonLedgerTableProcessedTableManager = ProcessedTableManager<
     _$AppDatabase,
-    $GalonLedgerTable,
-    GalonLedgerData,
-    $$GalonLedgerTableFilterComposer,
-    $$GalonLedgerTableOrderingComposer,
-    $$GalonLedgerTableAnnotationComposer,
-    $$GalonLedgerTableCreateCompanionBuilder,
-    $$GalonLedgerTableUpdateCompanionBuilder,
+    $GallonLedgerTable,
+    GallonLedgerData,
+    $$GallonLedgerTableFilterComposer,
+    $$GallonLedgerTableOrderingComposer,
+    $$GallonLedgerTableAnnotationComposer,
+    $$GallonLedgerTableCreateCompanionBuilder,
+    $$GallonLedgerTableUpdateCompanionBuilder,
     (
-      GalonLedgerData,
-      BaseReferences<_$AppDatabase, $GalonLedgerTable, GalonLedgerData>
+      GallonLedgerData,
+      BaseReferences<_$AppDatabase, $GallonLedgerTable, GallonLedgerData>
     ),
-    GalonLedgerData,
+    GallonLedgerData,
     PrefetchHooks Function()>;
 typedef $$CashierClosingsTableCreateCompanionBuilder = CashierClosingsCompanion
     Function({
@@ -6686,8 +6688,8 @@ class $AppDatabaseManager {
       $$StockMovementsTableTableManager(_db, _db.stockMovements);
   $$CashEntriesTableTableManager get cashEntries =>
       $$CashEntriesTableTableManager(_db, _db.cashEntries);
-  $$GalonLedgerTableTableManager get galonLedger =>
-      $$GalonLedgerTableTableManager(_db, _db.galonLedger);
+  $$GallonLedgerTableTableManager get gallonLedger =>
+      $$GallonLedgerTableTableManager(_db, _db.gallonLedger);
   $$CashierClosingsTableTableManager get cashierClosings =>
       $$CashierClosingsTableTableManager(_db, _db.cashierClosings);
   $$SyncCursorsTableTableManager get syncCursors =>

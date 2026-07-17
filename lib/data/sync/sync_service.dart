@@ -3,31 +3,32 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../database/database.dart';
 
-/// Sinkronisasi offline-first, PUSH-ONLY dari kasir ke Supabase (Postgres).
+/// Offline-first, PUSH-ONLY sync from the cashier to Supabase (Postgres).
 ///
-/// Kenapa mudah & bebas konflik: setiap tabel data bersifat append-only dan
-/// barisnya IMMUTABLE (tak pernah di-UPDATE/DELETE). Jadi sinkronisasi cukup
-/// mengirim baris baru — cukup lacak batas atas (lastId) per tabel via
-/// [SyncCursors]. Tak perlu flag per-baris, tak perlu memutasi baris ledger.
+/// Why it is easy & conflict-free: every data table is append-only and its
+/// rows are IMMUTABLE (never UPDATE/DELETE). So sync just sends new rows —
+/// track the high-water mark (lastId) per table via [SyncCursors]. No per-row
+/// flag, no mutation of ledger rows.
 ///
-/// Idempotent: mirror di Postgres ber-PK `(device_id, id)`. Upsert dengan
-/// `ignoreDuplicates` → kirim ulang aman (on conflict do nothing). id lokal
-/// unik per device; `device_id` memisahkan device kalau nanti multi-toko.
+/// Idempotent: the Postgres mirror has PK `(device_id, id)`. Upsert with
+/// `ignoreDuplicates` → re-sending is safe (on conflict do nothing). The local
+/// id is unique per device; `device_id` separates devices for future
+/// multi-store.
 ///
-/// HP owner hanya MEMBACA laporan dari Postgres → tak ada tulis bersamaan.
+/// The owner phone only READS reports from Postgres → no concurrent writes.
 ///
-/// Setup Postgres: lihat `doc/supabase_setup.sql`.
+/// Postgres setup: see `doc/supabase_setup.sql`.
 class SyncService {
   final AppDatabase db;
   final String deviceId;
-  final SupabaseClient? client; // null → sync nonaktif (offline saja)
+  final SupabaseClient? client; // null → sync disabled (offline only)
 
   SyncService(this.db, {required this.deviceId, this.client});
 
   bool get enabled => client != null;
 
-  /// Tabel yang disinkronkan (nama SQL snake_case = nama tabel Postgres).
-  /// SyncCursors sengaja TIDAK ikut (murni metadata lokal).
+  /// Synced tables (snake_case SQL name = Postgres table name).
+  /// SyncCursors is intentionally excluded (pure local metadata).
   List<TableInfo> get _syncedTables => [
         db.products,
         db.suppliers,
@@ -38,7 +39,7 @@ class SyncService {
         db.saleItems,
         db.stockMovements,
         db.cashEntries,
-        db.galonLedger,
+        db.gallonLedger,
         db.cashierClosings,
       ];
 
@@ -53,8 +54,8 @@ class SyncService {
       db.into(db.syncCursors).insertOnConflictUpdate(
           SyncCursorsCompanion.insert(entity: table, lastId: Value(lastId)));
 
-  /// Baris yang belum tersinkron per tabel: id > cursor. TANPA jaringan —
-  /// bisa diuji sendiri. Batasi [limit] baris per tabel per putaran.
+  /// Unsynced rows per table: id > cursor. NO network — self-testable.
+  /// Caps at [limit] rows per table per round.
   Future<List<Map<String, dynamic>>> pendingRows(TableInfo table,
       {int limit = 500}) async {
     final name = table.actualTableName;
@@ -66,9 +67,9 @@ class SyncService {
     return rows.map((r) => r.data).toList();
   }
 
-  /// Kirim semua baris tertunda ke Supabase, majukan cursor per tabel.
-  /// No-op kalau sync nonaktif. Aman diulang (idempotent).
-  /// Return jumlah baris terkirim.
+  /// Push all pending rows to Supabase, advance the per-table cursor.
+  /// No-op if sync is disabled. Safe to retry (idempotent).
+  /// Returns the number of rows pushed.
   Future<int> pushPending() async {
     final c = client;
     if (c == null) return 0;
@@ -76,7 +77,7 @@ class SyncService {
     var pushed = 0;
     for (final table in _syncedTables) {
       final name = table.actualTableName;
-      // Loop batch sampai habis (tabel besar tak dikirim sekaligus).
+      // Batch loop until drained (large tables not sent all at once).
       while (true) {
         final rows = await pendingRows(table);
         if (rows.isEmpty) break;

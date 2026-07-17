@@ -16,21 +16,21 @@ final _reportProvider = FutureProvider.autoDispose<DailyReport>((ref) {
   return ref.watch(reportsServiceProvider).dailyReport(day);
 });
 
-final _tanggal = DateFormat('EEEE, d MMMM yyyy', 'id_ID');
+final _dateFormat = DateFormat('EEEE, d MMMM yyyy', 'id_ID');
 
-/// Nama kategori kas → label ramah untuk owner.
-const _kategoriLabel = {
-  'penjualan': 'Penjualan',
-  'pembelian': 'Pembelian/kulakan',
-  'deposit_galon': 'Deposit galon',
-  'penyesuaian': 'Penyesuaian kas',
-  'biaya': 'Biaya',
-  'modal': 'Modal',
-  'prive': 'Prive',
+/// Cash category value → friendly Indonesian label for the owner.
+const _categoryLabel = {
+  'sale': 'Penjualan',
+  'purchase': 'Pembelian/kulakan',
+  'gallon_deposit': 'Deposit galon',
+  'adjustment': 'Penyesuaian kas',
+  'expense': 'Biaya',
+  'capital': 'Modal',
+  'drawing': 'Prive',
 };
 
-class LaporanHarianScreen extends ConsumerWidget {
-  const LaporanHarianScreen({super.key});
+class DailyReportScreen extends ConsumerWidget {
+  const DailyReportScreen({super.key});
 
   Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
     final current = ref.read(_selectedDayProvider);
@@ -70,7 +70,7 @@ class LaporanHarianScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           children: [
             Center(
-              child: Text(_tanggal.format(day),
+              child: Text(_dateFormat.format(day),
                   style: Theme.of(context).textTheme.titleMedium),
             ),
             const SizedBox(height: 16),
@@ -97,10 +97,10 @@ class LaporanHarianScreen extends ConsumerWidget {
             else
               ...r.byCategory.map((c) => Card(
                     child: ListTile(
-                      title: Text(_kategoriLabel[c.category] ?? c.category),
+                      title: Text(_categoryLabel[c.category] ?? c.category),
                       subtitle: Text(
-                          'masuk ${rupiah.format(c.masuk)} · '
-                          'keluar ${rupiah.format(c.keluar)}'),
+                          'masuk ${rupiah.format(c.inflow)} · '
+                          'keluar ${rupiah.format(c.outflow)}'),
                       trailing: Text(
                         '${c.net >= 0 ? '+' : ''}${rupiah.format(c.net)}',
                         style: TextStyle(
@@ -141,13 +141,13 @@ class LaporanHarianScreen extends ConsumerWidget {
     return Column(
       children: [
         Row(children: [
-          tile('Omzet', rupiah.format(s.omzet)),
-          tile('Laba kotor', rupiah.format(s.labaKotor),
+          tile('Omzet', rupiah.format(s.revenue)),
+          tile('Laba kotor', rupiah.format(s.grossProfit),
               color: Colors.green),
         ]),
         Row(children: [
-          tile('Kas masuk', rupiah.format(s.kasMasuk)),
-          tile('Kas keluar', rupiah.format(s.kasKeluar)),
+          tile('Kas masuk', rupiah.format(s.cashIn)),
+          tile('Kas keluar', rupiah.format(s.cashOut)),
         ]),
       ],
     );

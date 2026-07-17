@@ -4,7 +4,7 @@ import '../../data/database/database.dart';
 
 class SaleLine {
   final int productId;
-  final int qtyBase; // dalam satuan dasar
+  final int qtyBase; // in base units
   final double price; // per base unit
   const SaleLine({
     required this.productId,
@@ -18,17 +18,17 @@ class SalesService {
   final AppDatabase db;
   SalesService(this.db);
 
-  /// Catat 1 transaksi penjualan.
-  /// SEMUA ditulis dalam SATU transaksi DB agar konsisten:
-  /// header + item + kartu stok (keluar) + buku kas (masuk).
+  /// Record one sale.
+  /// EVERYTHING is written in a SINGLE DB transaction for consistency:
+  /// header + items + stock card (out) + cash book (in).
   ///
-  /// Untuk penjualan galon, panggil juga GalonService setelah ini
-  /// dengan saleId yang dikembalikan (air lewat sini, wadah lewat sana).
+  /// For gallon sales, also call GallonService afterwards with the returned
+  /// saleId (water goes through here, the container through there).
   Future<int> recordSale({
     required List<SaleLine> lines,
     int? customerId,
-    String paymentMethod = 'tunai',
-    String account = 'kas',
+    String paymentMethod = 'cash',
+    String account = 'cash',
     String? note,
   }) async {
     final total = lines.fold<double>(0, (sum, l) => sum + l.subtotal);
@@ -54,11 +54,11 @@ class SalesService {
               ),
             );
 
-        // Kartu stok: stok KELUAR (negatif).
+        // Stock card: stock OUT (negative).
         await db.into(db.stockMovements).insert(
               StockMovementsCompanion.insert(
                 productId: l.productId,
-                type: 'penjualan',
+                type: 'sale',
                 qtyBase: -l.qtyBase,
                 refType: const Value('sale'),
                 refId: Value(saleId),
@@ -66,14 +66,14 @@ class SalesService {
             );
       }
 
-      // Buku kas: uang MASUK (untuk penjualan tunai/qris/transfer).
-      // Untuk penjualan kredit (piutang), lewati baris ini dan catat
-      // pelunasan nanti — sesuaikan saat menambah fitur piutang di Fase 2.
+      // Cash book: money IN (for cash/qris/transfer sales).
+      // For credit sales (receivable), skip this row and record the payment
+      // later — adjust when the receivables feature lands in Phase 2.
       await db.into(db.cashEntries).insert(
             CashEntriesCompanion.insert(
-              direction: 'masuk',
+              direction: 'in',
               amount: total,
-              category: 'penjualan',
+              category: 'sale',
               account: Value(account),
               refType: const Value('sale'),
               refId: Value(saleId),

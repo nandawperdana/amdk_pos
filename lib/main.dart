@@ -11,13 +11,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'data/database/database.dart';
 import 'data/sync/sync_service.dart';
 import 'domain/services/cashier_service.dart';
-import 'domain/services/galon_service.dart';
-import 'domain/services/opname_service.dart';
+import 'domain/services/gallon_service.dart';
 import 'domain/services/product_service.dart';
 import 'domain/services/purchase_service.dart';
 import 'domain/services/reports_service.dart';
 import 'domain/services/sales_service.dart';
-import 'ui/laporan_harian_screen.dart';
+import 'domain/services/stock_take_service.dart';
+import 'ui/daily_report_screen.dart';
 import 'ui/pos_screen.dart';
 
 // --- Providers (Riverpod) ---------------------------------------------------
@@ -30,8 +30,8 @@ final dbProvider = Provider<AppDatabase>((ref) {
 
 final salesServiceProvider =
     Provider((ref) => SalesService(ref.watch(dbProvider)));
-final galonServiceProvider =
-    Provider((ref) => GalonService(ref.watch(dbProvider)));
+final gallonServiceProvider =
+    Provider((ref) => GallonService(ref.watch(dbProvider)));
 final reportsServiceProvider =
     Provider((ref) => ReportsService(ref.watch(dbProvider)));
 final cashierServiceProvider =
@@ -40,11 +40,11 @@ final purchaseServiceProvider =
     Provider((ref) => PurchaseService(ref.watch(dbProvider)));
 final productServiceProvider =
     Provider((ref) => ProductService(ref.watch(dbProvider)));
-final opnameServiceProvider =
-    Provider((ref) => OpnameService(ref.watch(dbProvider)));
+final stockTakeServiceProvider =
+    Provider((ref) => StockTakeService(ref.watch(dbProvider)));
 
-/// Client Supabase — di-override di main() kalau kredensial ada, else null
-/// (sync nonaktif, app tetap jalan offline).
+/// Supabase client — overridden in main() when credentials exist, else null
+/// (sync disabled, app still runs offline).
 final syncClientProvider = Provider<SupabaseClient?>((ref) => null);
 
 final syncServiceProvider = Provider((ref) => SyncService(
@@ -53,7 +53,7 @@ final syncServiceProvider = Provider((ref) => SyncService(
       client: ref.watch(syncClientProvider),
     ));
 
-/// Id device stabil per install (untuk PK mirror Postgres). Dibuat sekali.
+/// Stable per-install device id (for the Postgres mirror PK). Created once.
 String _deviceId(SharedPreferences prefs) {
   var id = prefs.getString('device_id');
   if (id == null) {
@@ -63,8 +63,8 @@ String _deviceId(SharedPreferences prefs) {
   return id;
 }
 
-/// Semua produk (aktif + nonaktif), live — untuk layar master produk.
-/// Aktif dulu, lalu per kategori & nama.
+/// All products (active + inactive), live — for the master-product screen.
+/// Active first, then by category & name.
 final allProductsProvider = StreamProvider<List<Product>>((ref) {
   final db = ref.watch(dbProvider);
   return (db.select(db.products)
@@ -76,15 +76,15 @@ final allProductsProvider = StreamProvider<List<Product>>((ref) {
       .watch();
 });
 
-// --- Peran ------------------------------------------------------------------
+// --- Role --------------------------------------------------------------------
 
-/// Satu app dua peran: kasir (POS penuh, tulis lokal) dan owner (baca laporan).
-/// Dipilih saat buka app, lalu dipersist (shared_preferences).
-enum AppRole { kasir, owner }
+/// One app, two roles: cashier (full POS, writes locally) and owner (reads
+/// reports). Chosen on launch, then persisted (shared_preferences).
+enum AppRole { cashier, owner }
 
-/// Diisi di main() lewat override — SharedPreferences dibaca sinkron.
+/// Filled in main() via override — SharedPreferences read synchronously.
 final prefsProvider = Provider<SharedPreferences>((ref) {
-  throw UnimplementedError('Override di main()');
+  throw UnimplementedError('Override in main()');
 });
 
 const _roleKey = 'role';
@@ -93,13 +93,13 @@ class RoleNotifier extends Notifier<AppRole?> {
   @override
   AppRole? build() {
     return switch (ref.watch(prefsProvider).getString(_roleKey)) {
-      'kasir' => AppRole.kasir,
+      'cashier' => AppRole.cashier,
       'owner' => AppRole.owner,
       _ => null,
     };
   }
 
-  /// Pilih peran (persist) atau kembali ke pemilih peran (null → hapus).
+  /// Pick a role (persist) or go back to the role picker (null → clear).
   void select(AppRole? role) {
     final prefs = ref.read(prefsProvider);
     if (role == null) {
@@ -115,15 +115,15 @@ final roleProvider = NotifierProvider<RoleNotifier, AppRole?>(RoleNotifier.new);
 
 // --- App --------------------------------------------------------------------
 
-/// Kredensial Supabase lewat --dart-define (JANGAN commit rahasia).
-/// Kosong → sync nonaktif, app jalan offline seperti biasa.
+/// Supabase credentials via --dart-define (DO NOT commit secrets).
+/// Empty → sync disabled, app runs offline as usual.
 ///   fvm flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
 const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeDateFormatting('id_ID'); // format Rp & tanggal Indonesia
+  await initializeDateFormatting('id_ID'); // Rp & Indonesian date formatting
   final prefs = await SharedPreferences.getInstance();
 
   SupabaseClient? syncClient;
@@ -160,14 +160,14 @@ class AmdkPosApp extends ConsumerWidget {
       supportedLocales: const [Locale('id', 'ID'), Locale('en')],
       home: switch (role) {
         null => const RolePickerScreen(),
-        AppRole.kasir => const PosScreen(),
+        AppRole.cashier => const PosScreen(),
         AppRole.owner => const OwnerScreen(),
       },
     );
   }
 }
 
-// --- Pilih peran --------------------------------------------------------------
+// --- Role picker --------------------------------------------------------------
 
 class RolePickerScreen extends ConsumerWidget {
   const RolePickerScreen({super.key});
@@ -192,7 +192,7 @@ class RolePickerScreen extends ConsumerWidget {
                   icon: const Icon(Icons.point_of_sale),
                   label: const Text('KASIR', style: TextStyle(fontSize: 22)),
                   onPressed: () =>
-                      ref.read(roleProvider.notifier).select(AppRole.kasir),
+                      ref.read(roleProvider.notifier).select(AppRole.cashier),
                 ),
               ),
               const SizedBox(height: 16),
@@ -215,15 +215,15 @@ class RolePickerScreen extends ConsumerWidget {
 
 // --- Mode owner ---------------------------------------------------------------
 
-/// Ringkasan hari ini. Fase 2: baca dari cloud (Supabase) — sekarang masih
-/// dari DB lokal, cukup untuk verifikasi alur di satu HP.
+/// Today's summary. Phase 2: read from the cloud (Supabase) — for now still
+/// from the local DB, enough to verify the flow on a single phone.
 final ownerSummaryProvider = FutureProvider.autoDispose((ref) async {
   final db = ref.watch(dbProvider);
   final reports = ref.watch(reportsServiceProvider);
   final summary = await reports.dailySummary(DateTime.now());
-  final galon = await db.galonBalance();
-  final kas = await db.cashBalance();
-  return (summary: summary, galon: galon, kas: kas);
+  final gallon = await db.gallonBalance();
+  final cash = await db.cashBalance();
+  return (summary: summary, gallon: gallon, cash: cash);
 });
 
 class OwnerScreen extends ConsumerWidget {
@@ -240,7 +240,7 @@ class OwnerScreen extends ConsumerWidget {
             icon: const Icon(Icons.event_note),
             tooltip: 'Laporan Harian',
             onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const LaporanHarianScreen())),
+                MaterialPageRoute(builder: (_) => const DailyReportScreen())),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -261,15 +261,15 @@ class OwnerScreen extends ConsumerWidget {
         data: (d) => ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _tile('Omzet', rupiah.format(d.summary.omzet)),
-            _tile('Laba kotor', rupiah.format(d.summary.labaKotor)),
-            _tile('Kas masuk', rupiah.format(d.summary.kasMasuk)),
-            _tile('Kas keluar', rupiah.format(d.summary.kasKeluar)),
-            _tile('Saldo kas', rupiah.format(d.kas)),
+            _tile('Omzet', rupiah.format(d.summary.revenue)),
+            _tile('Laba kotor', rupiah.format(d.summary.grossProfit)),
+            _tile('Kas masuk', rupiah.format(d.summary.cashIn)),
+            _tile('Kas keluar', rupiah.format(d.summary.cashOut)),
+            _tile('Saldo kas', rupiah.format(d.cash)),
             const Divider(),
-            _tile('Galon isi', '${d.galon.full}'),
-            _tile('Galon kosong', '${d.galon.empty}'),
-            _tile('Galon beredar (kewajiban)', '${d.galon.depositOut}'),
+            _tile('Galon isi', '${d.gallon.full}'),
+            _tile('Galon kosong', '${d.gallon.empty}'),
+            _tile('Galon beredar (kewajiban)', '${d.gallon.depositOut}'),
           ],
         ),
       ),
@@ -286,7 +286,7 @@ class OwnerScreen extends ConsumerWidget {
       );
 }
 
-/// Tombol push sync ke cloud. Muncul hanya kalau kredensial Supabase ada.
+/// Cloud push-sync button. Shown only when Supabase credentials exist.
 class _SyncButton extends ConsumerStatefulWidget {
   const _SyncButton();
 

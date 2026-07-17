@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/database/database.dart';
 import '../main.dart';
 
-/// Data opname: produk aktif + stok sistem sekarang + saldo galon.
-final opnameDataProvider = FutureProvider.autoDispose((ref) async {
+/// Stock-take data: active products + current system stock + gallon balance.
+final stockTakeDataProvider = FutureProvider.autoDispose((ref) async {
   final db = ref.watch(dbProvider);
   final products = await (db.select(db.products)
         ..where((p) => p.active.equals(true))
@@ -19,81 +19,81 @@ final opnameDataProvider = FutureProvider.autoDispose((ref) async {
   for (final p in products) {
     stocks[p.id] = await db.stockOf(p.id);
   }
-  final galon = await db.galonBalance();
-  return (products: products, stocks: stocks, galon: galon);
+  final gallon = await db.gallonBalance();
+  return (products: products, stocks: stocks, gallon: gallon);
 });
 
-class OpnameScreen extends ConsumerWidget {
-  const OpnameScreen({super.key});
+class StockTakeScreen extends ConsumerWidget {
+  const StockTakeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(opnameDataProvider);
+    final data = ref.watch(stockTakeDataProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Opname / Penyesuaian Stok')),
       body: data.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Gagal memuat: $e')),
-        data: (d) => _OpnameForm(
-            products: d.products, stocks: d.stocks, galon: d.galon),
+        data: (d) => _StockTakeForm(
+            products: d.products, stocks: d.stocks, gallon: d.gallon),
       ),
     );
   }
 }
 
-class _OpnameForm extends ConsumerStatefulWidget {
+class _StockTakeForm extends ConsumerStatefulWidget {
   final List<Product> products;
   final Map<int, int> stocks;
-  final GalonBalance galon;
-  const _OpnameForm(
-      {required this.products, required this.stocks, required this.galon});
+  final GallonBalance gallon;
+  const _StockTakeForm(
+      {required this.products, required this.stocks, required this.gallon});
 
   @override
-  ConsumerState<_OpnameForm> createState() => _OpnameFormState();
+  ConsumerState<_StockTakeForm> createState() => _StockTakeFormState();
 }
 
-class _OpnameFormState extends ConsumerState<_OpnameForm> {
-  late final Map<int, TextEditingController> _stok;
-  late final TextEditingController _isi, _kosong, _beredar;
+class _StockTakeFormState extends ConsumerState<_StockTakeForm> {
+  late final Map<int, TextEditingController> _stock;
+  late final TextEditingController _full, _empty, _depositOut;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _stok = {
+    _stock = {
       for (final p in widget.products)
         p.id: TextEditingController(text: '${widget.stocks[p.id] ?? 0}'),
     };
-    _isi = TextEditingController(text: '${widget.galon.full}');
-    _kosong = TextEditingController(text: '${widget.galon.empty}');
-    _beredar = TextEditingController(text: '${widget.galon.depositOut}');
+    _full = TextEditingController(text: '${widget.gallon.full}');
+    _empty = TextEditingController(text: '${widget.gallon.empty}');
+    _depositOut = TextEditingController(text: '${widget.gallon.depositOut}');
   }
 
   @override
   void dispose() {
-    for (final c in _stok.values) {
+    for (final c in _stock.values) {
       c.dispose();
     }
-    _isi.dispose();
-    _kosong.dispose();
-    _beredar.dispose();
+    _full.dispose();
+    _empty.dispose();
+    _depositOut.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      final svc = ref.read(opnameServiceProvider);
+      final svc = ref.read(stockTakeServiceProvider);
       for (final p in widget.products) {
-        final v = int.tryParse(_stok[p.id]!.text);
+        final v = int.tryParse(_stock[p.id]!.text);
         if (v != null) await svc.adjustStock(p.id, v);
       }
-      await svc.adjustGalon(
-        isi: int.tryParse(_isi.text) ?? widget.galon.full,
-        kosong: int.tryParse(_kosong.text) ?? widget.galon.empty,
-        beredar: int.tryParse(_beredar.text) ?? widget.galon.depositOut,
+      await svc.adjustGallon(
+        full: int.tryParse(_full.text) ?? widget.gallon.full,
+        empty: int.tryParse(_empty.text) ?? widget.gallon.empty,
+        depositOut: int.tryParse(_depositOut.text) ?? widget.gallon.depositOut,
       );
-      ref.invalidate(opnameDataProvider);
+      ref.invalidate(stockTakeDataProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Opname tersimpan (selisih dicatat)')));
@@ -112,7 +112,7 @@ class _OpnameFormState extends ConsumerState<_OpnameForm> {
           child: ListView(
             padding: const EdgeInsets.all(12),
             children: [
-              _GalonCard(isi: _isi, kosong: _kosong, beredar: _beredar),
+              _GallonCard(full: _full, empty: _empty, depositOut: _depositOut),
               const SizedBox(height: 8),
               Text('Stok produk (isi hitungan fisik)',
                   style: Theme.of(context).textTheme.titleMedium),
@@ -121,7 +121,7 @@ class _OpnameFormState extends ConsumerState<_OpnameForm> {
                 _StockRow(
                   name: p.name,
                   current: widget.stocks[p.id] ?? 0,
-                  controller: _stok[p.id]!,
+                  controller: _stock[p.id]!,
                 ),
             ],
           ),
@@ -182,10 +182,10 @@ class _StockRow extends StatelessWidget {
   }
 }
 
-class _GalonCard extends StatelessWidget {
-  final TextEditingController isi, kosong, beredar;
-  const _GalonCard(
-      {required this.isi, required this.kosong, required this.beredar});
+class _GallonCard extends StatelessWidget {
+  final TextEditingController full, empty, depositOut;
+  const _GallonCard(
+      {required this.full, required this.empty, required this.depositOut});
 
   @override
   Widget build(BuildContext context) {
@@ -210,9 +210,9 @@ class _GalonCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Row(children: [
-              field('isi', isi),
-              field('kosong', kosong),
-              field('beredar', beredar),
+              field('isi', full),
+              field('kosong', empty),
+              field('beredar', depositOut),
             ]),
           ],
         ),

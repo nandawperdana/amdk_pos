@@ -1,12 +1,12 @@
 import 'package:amdk_pos/data/database/database.dart';
+import 'package:amdk_pos/data/sync/sync_service.dart';
 import 'package:amdk_pos/domain/services/cashier_service.dart';
-import 'package:amdk_pos/domain/services/galon_service.dart';
-import 'package:amdk_pos/domain/services/opname_service.dart';
+import 'package:amdk_pos/domain/services/gallon_service.dart';
 import 'package:amdk_pos/domain/services/product_service.dart';
 import 'package:amdk_pos/domain/services/purchase_service.dart';
 import 'package:amdk_pos/domain/services/reports_service.dart';
 import 'package:amdk_pos/domain/services/sales_service.dart';
-import 'package:amdk_pos/data/sync/sync_service.dart';
+import 'package:amdk_pos/domain/services/stock_take_service.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,17 +17,17 @@ void main() {
   setUp(() => db = AppDatabase(NativeDatabase.memory()));
   tearDown(() => db.close());
 
-  test('seed produk terisi saat DB dibuat', () async {
+  test('seed products are inserted when the DB is created', () async {
     final products = await db.select(db.products).get();
     expect(products, isNotEmpty);
-    expect(products.where((p) => p.isGalon), isNotEmpty);
+    expect(products.where((p) => p.isGallon), isNotEmpty);
     expect(products.every((p) => p.sellPrice > p.buyPrice), isTrue);
   });
 
-  test('recordSale: stok keluar, kas masuk, omzet benar', () async {
+  test('recordSale: stock out, cash in, revenue correct', () async {
     final sales = SalesService(db);
     final p = await (db.select(db.products)
-          ..where((t) => t.isGalon.equals(false))
+          ..where((t) => t.isGallon.equals(false))
           ..limit(1))
         .getSingle();
 
@@ -35,41 +35,43 @@ void main() {
       SaleLine(productId: p.id, qtyBase: 3, price: p.sellPrice),
     ]);
 
-    expect(await db.stockOf(p.id), -3); // belum ada kulakan → minus
+    expect(await db.stockOf(p.id), -3); // no purchase yet → negative
     expect(await db.cashBalance(), p.sellPrice * 3);
 
     final summary = await ReportsService(db).dailySummary(DateTime.now());
-    expect(summary.omzet, p.sellPrice * 3);
-    expect(summary.labaKotor, (p.sellPrice - p.buyPrice) * 3);
+    expect(summary.revenue, p.sellPrice * 3);
+    expect(summary.grossProfit, (p.sellPrice - p.buyPrice) * 3);
   });
 
-  test('galon: jual baru + deposit, lalu tukar, saldo wadah konsisten', () async {
-    final galon = GalonService(db);
+  test('gallon: new sale + deposit, then exchange, container balance consistent',
+      () async {
+    final gallon = GallonService(db);
 
-    // Kulakan 10 galon isi (tukar kosong — saldo kosong jadi minus, wajar
-    // untuk stok awal; penyesuaian stok awal menyusul di UI stok).
-    await galon.recordRestockExchange(qty: 10);
+    // Restock 10 filled gallons (empty swap — empty goes negative, expected
+    // for opening stock; the opening adjustment follows in the stock UI).
+    await gallon.recordRestockExchange(qty: 10);
 
-    // Pelanggan baru: 2 galon + deposit.
-    await galon.recordNewGalonSale(qty: 2, depositPerGalon: 40000);
-    var b = await db.galonBalance();
+    // New customer: 2 gallons + deposit.
+    await gallon.recordNewGallonSale(qty: 2, depositPerGallon: 40000);
+    var b = await db.gallonBalance();
     expect(b.full, 8);
-    expect(b.depositOut, 2); // wadah beredar = kewajiban
+    expect(b.depositOut, 2); // containers out = liability
 
-    // Deposit masuk kas TAPI bukan omzet.
+    // Deposit enters cash BUT is not revenue.
     expect(await db.cashBalance(), 80000);
     final summary = await ReportsService(db).dailySummary(DateTime.now());
-    expect(summary.omzet, 0);
+    expect(summary.revenue, 0);
 
-    // Langganan: tukar 1 galon.
-    await galon.recordExchange(qty: 1);
-    b = await db.galonBalance();
+    // Subscriber: exchange 1 gallon.
+    await gallon.recordExchange(qty: 1);
+    b = await db.gallonBalance();
     expect(b.full, 7);
-    expect(b.empty, -10 + 1); // -10 dari kulakan tukar + 1 dari pelanggan
+    expect(b.empty, -10 + 1); // -10 from restock swap + 1 from the customer
     expect(b.depositOut, 2);
   });
 
-  test('tutup kasir: selisih dicatat sebagai penyesuaian, bukan overwrite', () async {
+  test('cashier closing: difference recorded as adjustment, not overwrite',
+      () async {
     final sales = SalesService(db);
     final cashier = CashierService(db);
     final p = await (db.select(db.products)..limit(1)).getSingle();
@@ -78,22 +80,22 @@ void main() {
         lines: [SaleLine(productId: p.id, qtyBase: 1, price: p.sellPrice)]);
     final systemBalance = await db.cashBalance();
 
-    expect(await cashier.openingBalance(), 0); // belum pernah tutup
+    expect(await cashier.openingBalance(), 0); // no closing yet
 
-    // Fisik kurang dari sistem (misal ada uang kembalian salah hitung).
+    // Physical less than system (e.g. a miscounted change).
     const shortage = 500.0;
     await cashier.recordClosing(physicalCount: systemBalance - shortage);
 
-    // Selisih tercatat sebagai baris kas baru, bukan mengubah baris lama.
+    // Difference recorded as a new cash row, not by editing an old one.
     expect(await db.cashBalance(), systemBalance - shortage);
     final entries = await db.select(db.cashEntries).get();
-    expect(entries.where((e) => e.category == 'penyesuaian'), hasLength(1));
+    expect(entries.where((e) => e.category == 'adjustment'), hasLength(1));
 
-    // Closing berikutnya mulai dari hitungan fisik closing sebelumnya.
+    // The next closing starts from the previous closing's physical count.
     expect(await cashier.openingBalance(), systemBalance - shortage);
   });
 
-  test('kulakan lunas: stok masuk, kas keluar', () async {
+  test('purchase paid: stock in, cash out', () async {
     final purchase = PurchaseService(db);
     final p = await (db.select(db.products)..limit(1)).getSingle();
 
@@ -101,165 +103,165 @@ void main() {
         lines: [PurchaseLine(productId: p.id, qtyBase: 10, price: p.buyPrice)]);
 
     expect(await db.stockOf(p.id), 10);
-    expect(await db.cashBalance(), -p.buyPrice * 10); // uang keluar
+    expect(await db.cashBalance(), -p.buyPrice * 10); // money out
   });
 
-  test('kulakan utang: stok masuk, kas TIDAK berubah', () async {
+  test('purchase on debt: stock in, cash UNCHANGED', () async {
     final purchase = PurchaseService(db);
     final p = await (db.select(db.products)..limit(1)).getSingle();
 
     await purchase.recordPurchase(
       lines: [PurchaseLine(productId: p.id, qtyBase: 5, price: p.buyPrice)],
-      paymentStatus: 'utang',
+      paymentStatus: 'debt',
     );
 
     expect(await db.stockOf(p.id), 5);
-    expect(await db.cashBalance(), 0); // belum bayar, kas tetap
+    expect(await db.cashBalance(), 0); // not paid, cash unchanged
   });
 
-  test('kulakan galon isi + tukar kosong: air stok naik, wadah bergerak', () async {
+  test('gallon restock + empty swap: water stock up, container moves', () async {
     final purchase = PurchaseService(db);
-    final galon = GalonService(db);
-    final g = await (db.select(db.products)..where((t) => t.isGalon.equals(true))
+    final gallon = GallonService(db);
+    final g = await (db.select(db.products)..where((t) => t.isGallon.equals(true))
           ..limit(1))
         .getSingle();
 
     await purchase.recordPurchase(
         lines: [PurchaseLine(productId: g.id, qtyBase: 20, price: g.buyPrice)]);
-    await galon.recordRestockExchange(qty: 20);
+    await gallon.recordRestockExchange(qty: 20);
 
-    expect(await db.stockOf(g.id), 20); // air siap jual
-    final b = await db.galonBalance();
-    expect(b.full, 20); // wadah isi
-    expect(b.empty, -20); // kosong ditukar ke agen
+    expect(await db.stockOf(g.id), 20); // water ready to sell
+    final b = await db.gallonBalance();
+    expect(b.full, 20); // filled containers
+    expect(b.empty, -20); // empties swapped at the agent
   });
 
-  test('laporan harian: rincian per produk & per kategori kas', () async {
+  test('daily report: per-product & per-cash-category breakdown', () async {
     final sales = SalesService(db);
     final reports = ReportsService(db);
-    final gelas = await (db.select(db.products)
-          ..where((t) => t.category.equals('gelas'))
+    final cup = await (db.select(db.products)
+          ..where((t) => t.category.equals('cup'))
           ..limit(1))
         .getSingle();
-    final botol = await (db.select(db.products)
-          ..where((t) => t.category.equals('botol'))
+    final bottle = await (db.select(db.products)
+          ..where((t) => t.category.equals('bottle'))
           ..limit(1))
         .getSingle();
 
-    // Dua transaksi: gelas ×5, botol ×2, lalu gelas ×3 lagi (harus diagregasi).
+    // Two transactions: cup ×5, bottle ×2, then cup ×3 (must aggregate).
     await sales.recordSale(
-        lines: [SaleLine(productId: gelas.id, qtyBase: 5, price: gelas.sellPrice)]);
+        lines: [SaleLine(productId: cup.id, qtyBase: 5, price: cup.sellPrice)]);
     await sales.recordSale(lines: [
-      SaleLine(productId: botol.id, qtyBase: 2, price: botol.sellPrice),
-      SaleLine(productId: gelas.id, qtyBase: 3, price: gelas.sellPrice),
+      SaleLine(productId: bottle.id, qtyBase: 2, price: bottle.sellPrice),
+      SaleLine(productId: cup.id, qtyBase: 3, price: cup.sellPrice),
     ]);
 
     final r = await reports.dailyReport(DateTime.now());
 
-    // Per produk: gelas teragregasi jadi 8 pcs.
-    final gelasRow = r.byProduct.firstWhere((p) => p.name == gelas.name);
-    expect(gelasRow.qty, 8);
-    expect(gelasRow.revenue, gelas.sellPrice * 8);
-    expect(gelasRow.profit, (gelas.sellPrice - gelas.buyPrice) * 8);
-    // Urut omzet desc.
+    // Per product: cup aggregates to 8 pcs.
+    final cupRow = r.byProduct.firstWhere((p) => p.name == cup.name);
+    expect(cupRow.qty, 8);
+    expect(cupRow.revenue, cup.sellPrice * 8);
+    expect(cupRow.profit, (cup.sellPrice - cup.buyPrice) * 8);
+    // Sorted by revenue desc.
     expect(r.byProduct.first.revenue >= r.byProduct.last.revenue, isTrue);
 
-    // Kas: semua penjualan masuk kategori 'penjualan'.
-    final jual = r.byCategory.firstWhere((c) => c.category == 'penjualan');
-    expect(jual.masuk, gelas.sellPrice * 8 + botol.sellPrice * 2);
-    expect(jual.keluar, 0);
+    // Cash: all sales land in category 'sale'.
+    final sale = r.byCategory.firstWhere((c) => c.category == 'sale');
+    expect(sale.inflow, cup.sellPrice * 8 + bottle.sellPrice * 2);
+    expect(sale.outflow, 0);
   });
 
-  test('master produk: tambah, edit, nonaktif hilang dari daftar aktif', () async {
+  test('master product: add, edit, deactivate drops from active list', () async {
     final svc = ProductService(db);
 
     Future<List<Product>> active() =>
         (db.select(db.products)..where((t) => t.active.equals(true))).get();
     final before = (await active()).length;
 
-    // Tambah galon baru → isGalon otomatis dari kategori.
+    // Add a new gallon → isGallon derived from category.
     await svc.save(const ProductsCompanion(
       name: Value('Galon RO 19L'),
-      category: Value('galon'),
-      isGalon: Value(true),
+      category: Value('gallon'),
+      isGallon: Value(true),
       buyPrice: Value(14000),
       sellPrice: Value(17000),
     ));
     var rows = await active();
     expect(rows.length, before + 1);
-    final baru = rows.firstWhere((p) => p.name == 'Galon RO 19L');
-    expect(baru.isGalon, isTrue);
+    final added = rows.firstWhere((p) => p.name == 'Galon RO 19L');
+    expect(added.isGallon, isTrue);
 
-    // Edit harga jual.
+    // Edit the sell price.
     await svc.save(const ProductsCompanion(sellPrice: Value(18000)),
-        id: baru.id);
+        id: added.id);
     final edited = await (db.select(db.products)
-          ..where((t) => t.id.equals(baru.id)))
+          ..where((t) => t.id.equals(added.id)))
         .getSingle();
     expect(edited.sellPrice, 18000);
-    expect(edited.name, 'Galon RO 19L'); // field lain tak tersentuh
+    expect(edited.name, 'Galon RO 19L'); // other fields untouched
 
-    // Nonaktifkan → hilang dari daftar aktif, baris tetap ada.
-    await svc.setActive(baru.id, false);
-    expect((await active()).where((p) => p.id == baru.id), isEmpty);
+    // Deactivate → drops from active list, row still exists.
+    await svc.setActive(added.id, false);
+    expect((await active()).where((p) => p.id == added.id), isEmpty);
     expect(
-        await (db.select(db.products)..where((t) => t.id.equals(baru.id)))
+        await (db.select(db.products)..where((t) => t.id.equals(added.id)))
             .getSingleOrNull(),
         isNotNull);
   });
 
-  test('opname stok: selisih dicatat, no-op kalau sama', () async {
-    final opname = OpnameService(db);
+  test('stock take: difference recorded, no-op when equal', () async {
+    final stockTake = StockTakeService(db);
     final p = await (db.select(db.products)..limit(1)).getSingle();
 
-    // Sistem 0 → fisik 12: tulis selisih +12.
-    await opname.adjustStock(p.id, 12);
+    // System 0 → physical 12: write difference +12.
+    await stockTake.adjustStock(p.id, 12);
     expect(await db.stockOf(p.id), 12);
 
-    // Fisik sama (12): no-op, tak ada baris baru.
+    // Same physical (12): no-op, no new row.
     final rowsBefore = (await db.select(db.stockMovements).get()).length;
-    await opname.adjustStock(p.id, 12);
+    await stockTake.adjustStock(p.id, 12);
     expect((await db.select(db.stockMovements).get()).length, rowsBefore);
 
-    // Fisik turun ke 10: selisih -2.
-    await opname.adjustStock(p.id, 10);
+    // Physical down to 10: difference -2.
+    await stockTake.adjustStock(p.id, 10);
     expect(await db.stockOf(p.id), 10);
   });
 
-  test('opname galon: koreksi kosong minus ke fisik nyata', () async {
-    final galon = GalonService(db);
-    final opname = OpnameService(db);
+  test('stock take gallon: correct negative empty to the real count', () async {
+    final gallon = GallonService(db);
+    final stockTake = StockTakeService(db);
 
-    // Kulakan tukar bikin kosong minus (stok awal belum dicatat).
-    await galon.recordRestockExchange(qty: 10); // isi +10, kosong -10
-    var b = await db.galonBalance();
+    // Restock swap makes empty negative (opening stock not recorded).
+    await gallon.recordRestockExchange(qty: 10); // full +10, empty -10
+    var b = await db.gallonBalance();
     expect(b.empty, -10);
 
-    // Opname: fisik nyata isi 10, kosong 5, beredar 0.
-    await opname.adjustGalon(isi: 10, kosong: 5, beredar: 0);
-    b = await db.galonBalance();
+    // Stock take: real physical full 10, empty 5, depositOut 0.
+    await stockTake.adjustGallon(full: 10, empty: 5, depositOut: 0);
+    b = await db.gallonBalance();
     expect(b.full, 10);
-    expect(b.empty, 5); // -10 dikoreksi +15 jadi 5
+    expect(b.empty, 5); // -10 corrected by +15 to 5
     expect(b.depositOut, 0);
   });
 
-  test('sync: pendingRows hormati cursor per tabel', () async {
+  test('sync: pendingRows respects the per-table cursor', () async {
     final sync = SyncService(db, deviceId: 'dev-test');
 
-    // Seed = 8 produk, cursor 0 → semua tertunda.
+    // Seed = 8 products, cursor 0 → all pending.
     var pending = await sync.pendingRows(db.products);
     expect(pending.length, 8);
     expect(pending.first['id'], 1);
     expect(pending.first.containsKey('name'), isTrue);
 
-    // Majukan cursor ke 5 → hanya id 6,7,8 tertunda.
+    // Advance cursor to 5 → only ids 6,7,8 pending.
     await db.into(db.syncCursors).insertOnConflictUpdate(
         SyncCursorsCompanion.insert(entity: 'products', lastId: const Value(5)));
     pending = await sync.pendingRows(db.products);
     expect(pending.map((r) => r['id']), [6, 7, 8]);
   });
 
-  test('sync: pushPending no-op tanpa client (offline)', () async {
+  test('sync: pushPending is a no-op without a client (offline)', () async {
     final sync = SyncService(db, deviceId: 'dev-test'); // client null
     expect(sync.enabled, isFalse);
     expect(await sync.pushPending(), 0);

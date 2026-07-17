@@ -3,24 +3,24 @@ import 'package:drift/drift.dart';
 import '../../data/database/database.dart';
 
 class DailySummary {
-  final double omzet;
-  final double labaKotor; // omzet - HPP
-  final double kasMasuk;
-  final double kasKeluar;
+  final double revenue;
+  final double grossProfit; // revenue - COGS
+  final double cashIn;
+  final double cashOut;
   const DailySummary({
-    required this.omzet,
-    required this.labaKotor,
-    required this.kasMasuk,
-    required this.kasKeluar,
+    required this.revenue,
+    required this.grossProfit,
+    required this.cashIn,
+    required this.cashOut,
   });
 }
 
-/// Penjualan satu produk dalam sehari.
+/// Sales of a single product within a day.
 class ProductSales {
   final String name;
   final int qty;
   final double revenue;
-  final double profit; // revenue - HPP
+  final double profit; // revenue - COGS
   const ProductSales({
     required this.name,
     required this.qty,
@@ -29,24 +29,24 @@ class ProductSales {
   });
 }
 
-/// Arus kas per kategori dalam sehari (mis. 'penjualan', 'pembelian',
-/// 'deposit_galon', 'penyesuaian').
+/// Cash flow per category within a day (e.g. 'sale', 'purchase',
+/// 'gallon_deposit', 'adjustment').
 class CashByCategory {
   final String category;
-  final double masuk;
-  final double keluar;
+  final double inflow;
+  final double outflow;
   const CashByCategory({
     required this.category,
-    required this.masuk,
-    required this.keluar,
+    required this.inflow,
+    required this.outflow,
   });
-  double get net => masuk - keluar;
+  double get net => inflow - outflow;
 }
 
-/// Laporan harian lengkap: ringkasan + rincian per produk & per kategori kas.
+/// Full daily report: summary + per-product & per-cash-category breakdown.
 class DailyReport {
   final DailySummary summary;
-  final List<ProductSales> byProduct; // urut omzet desc
+  final List<ProductSales> byProduct; // sorted by revenue desc
   final List<CashByCategory> byCategory;
   const DailyReport({
     required this.summary,
@@ -59,9 +59,9 @@ class ReportsService {
   final AppDatabase db;
   ReportsService(this.db);
 
-  /// Ringkasan harian. HPP = buyPrice produk × qty terjual.
-  /// Catatan: query produk di loop (N+1) sengaja dibiarkan sederhana untuk
-  /// scaffold — optimalkan dengan JOIN saat volume transaksi membesar.
+  /// Daily summary. COGS = product buyPrice × qty sold.
+  /// Note: the per-product lookup in a loop (N+1) is left simple for the
+  /// scaffold — optimize with a JOIN once transaction volume grows.
   Future<DailySummary> dailySummary(DateTime day) async {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
@@ -73,17 +73,17 @@ class ReportsService {
         .get();
     final saleIds = sales.map((s) => s.id).toList();
 
-    double omzet = 0, hpp = 0;
+    double revenue = 0, cogs = 0;
     if (saleIds.isNotEmpty) {
       final items = await (db.select(db.saleItems)
             ..where((i) => i.saleId.isIn(saleIds)))
           .get();
       for (final it in items) {
-        omzet += it.subtotal;
+        revenue += it.subtotal;
         final p = await (db.select(db.products)
               ..where((p) => p.id.equals(it.productId)))
             .getSingleOrNull();
-        hpp += (p?.buyPrice ?? 0) * it.qtyBase;
+        cogs += (p?.buyPrice ?? 0) * it.qtyBase;
       }
     }
 
@@ -92,26 +92,26 @@ class ReportsService {
               c.date.isBiggerOrEqualValue(start) &
               c.date.isSmallerThanValue(end)))
         .get();
-    double masuk = 0, keluar = 0;
+    double inflow = 0, outflow = 0;
     for (final c in cash) {
-      if (c.direction == 'masuk') {
-        masuk += c.amount;
+      if (c.direction == 'in') {
+        inflow += c.amount;
       } else {
-        keluar += c.amount;
+        outflow += c.amount;
       }
     }
 
     return DailySummary(
-      omzet: omzet,
-      labaKotor: omzet - hpp,
-      kasMasuk: masuk,
-      kasKeluar: keluar,
+      revenue: revenue,
+      grossProfit: revenue - cogs,
+      cashIn: inflow,
+      cashOut: outflow,
     );
   }
 
-  /// Laporan harian lengkap dengan rincian per produk & per kategori kas.
-  /// N+1 lookup produk dibiarkan sederhana (sama seperti dailySummary) —
-  /// optimalkan dengan JOIN saat volume membesar.
+  /// Full daily report with per-product & per-cash-category breakdown.
+  /// The N+1 product lookup is left simple (same as dailySummary) — optimize
+  /// with a JOIN once volume grows.
   Future<DailyReport> dailyReport(DateTime day) async {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
@@ -123,9 +123,9 @@ class ReportsService {
         .get();
     final saleIds = sales.map((s) => s.id).toList();
 
-    // Agregasi per produk.
+    // Aggregate per product.
     final agg = <int, ({String name, int qty, double revenue, double profit})>{};
-    double omzet = 0, hpp = 0;
+    double revenue = 0, cogs = 0;
     if (saleIds.isNotEmpty) {
       final items = await (db.select(db.saleItems)
             ..where((i) => i.saleId.isIn(saleIds)))
@@ -134,15 +134,15 @@ class ReportsService {
         final p = await (db.select(db.products)
               ..where((p) => p.id.equals(it.productId)))
             .getSingleOrNull();
-        final itemHpp = (p?.buyPrice ?? 0) * it.qtyBase;
-        omzet += it.subtotal;
-        hpp += itemHpp;
+        final itemCogs = (p?.buyPrice ?? 0) * it.qtyBase;
+        revenue += it.subtotal;
+        cogs += itemCogs;
         final prev = agg[it.productId];
         agg[it.productId] = (
           name: p?.name ?? 'Produk #${it.productId}',
           qty: (prev?.qty ?? 0) + it.qtyBase,
           revenue: (prev?.revenue ?? 0) + it.subtotal,
-          profit: (prev?.profit ?? 0) + (it.subtotal - itemHpp),
+          profit: (prev?.profit ?? 0) + (it.subtotal - itemCogs),
         );
       }
     }
@@ -152,36 +152,38 @@ class ReportsService {
         .toList()
       ..sort((a, b) => b.revenue.compareTo(a.revenue));
 
-    // Kas per kategori.
+    // Cash per category.
     final cash = await (db.select(db.cashEntries)
           ..where((c) =>
               c.date.isBiggerOrEqualValue(start) &
               c.date.isSmallerThanValue(end)))
         .get();
-    final catAgg = <String, ({double masuk, double keluar})>{};
-    double masuk = 0, keluar = 0;
+    final catAgg = <String, ({double inflow, double outflow})>{};
+    double inflow = 0, outflow = 0;
     for (final c in cash) {
-      final prev = catAgg[c.category] ?? (masuk: 0.0, keluar: 0.0);
-      if (c.direction == 'masuk') {
-        masuk += c.amount;
-        catAgg[c.category] = (masuk: prev.masuk + c.amount, keluar: prev.keluar);
+      final prev = catAgg[c.category] ?? (inflow: 0.0, outflow: 0.0);
+      if (c.direction == 'in') {
+        inflow += c.amount;
+        catAgg[c.category] =
+            (inflow: prev.inflow + c.amount, outflow: prev.outflow);
       } else {
-        keluar += c.amount;
-        catAgg[c.category] = (masuk: prev.masuk, keluar: prev.keluar + c.amount);
+        outflow += c.amount;
+        catAgg[c.category] =
+            (inflow: prev.inflow, outflow: prev.outflow + c.amount);
       }
     }
     final byCategory = catAgg.entries
         .map((e) => CashByCategory(
-            category: e.key, masuk: e.value.masuk, keluar: e.value.keluar))
+            category: e.key, inflow: e.value.inflow, outflow: e.value.outflow))
         .toList()
       ..sort((a, b) => b.net.abs().compareTo(a.net.abs()));
 
     return DailyReport(
       summary: DailySummary(
-        omzet: omzet,
-        labaKotor: omzet - hpp,
-        kasMasuk: masuk,
-        kasKeluar: keluar,
+        revenue: revenue,
+        grossProfit: revenue - cogs,
+        cashIn: inflow,
+        cashOut: outflow,
       ),
       byProduct: byProduct,
       byCategory: byCategory,

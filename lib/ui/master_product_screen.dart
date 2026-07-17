@@ -6,10 +6,19 @@ import '../data/database/database.dart';
 import '../main.dart';
 import 'pos_screen.dart' show rupiah;
 
-const _categories = ['galon', 'botol', 'gelas', 'lainnya'];
+/// Category value (stored) + Indonesian display label.
+const _categories = [
+  (value: 'gallon', label: 'Galon'),
+  (value: 'bottle', label: 'Botol'),
+  (value: 'cup', label: 'Gelas'),
+  (value: 'other', label: 'Lainnya'),
+];
 
-class MasterProdukScreen extends ConsumerWidget {
-  const MasterProdukScreen({super.key});
+String _categoryLabel(String value) =>
+    _categories.firstWhere((c) => c.value == value, orElse: () => (value: value, label: value)).label;
+
+class MasterProductScreen extends ConsumerWidget {
+  const MasterProductScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,7 +40,7 @@ class MasterProdukScreen extends ConsumerWidget {
             final p = list[i];
             return ListTile(
               enabled: p.active,
-              leading: p.isGalon
+              leading: p.isGallon
                   ? const Icon(Icons.water_drop)
                   : const Icon(Icons.local_drink_outlined),
               title: Text(p.name,
@@ -39,7 +48,7 @@ class MasterProdukScreen extends ConsumerWidget {
                       decoration:
                           p.active ? null : TextDecoration.lineThrough)),
               subtitle: Text(
-                  '${p.category} · jual ${rupiah.format(p.sellPrice)} · '
+                  '${_categoryLabel(p.category)} · jual ${rupiah.format(p.sellPrice)} · '
                   'beli ${rupiah.format(p.buyPrice)}'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -73,7 +82,7 @@ class MasterProdukScreen extends ConsumerWidget {
 }
 
 class _ProductFormScreen extends ConsumerStatefulWidget {
-  final Product? product; // null = tambah
+  final Product? product; // null = add
   const _ProductFormScreen({this.product});
 
   @override
@@ -101,7 +110,7 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
     _sell = TextEditingController(text: _p?.sellPrice.toStringAsFixed(0) ?? '');
     _packUnit = TextEditingController(text: _p?.packUnit ?? '');
     _packSize = TextEditingController(text: '${_p?.packSize ?? 1}');
-    _category = _p?.category ?? 'lainnya';
+    _category = _p?.category ?? 'other';
   }
 
   @override
@@ -119,8 +128,9 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
       name: Value(_name.text.trim()),
       brand: Value(_brand.text.trim()),
       category: Value(_category),
-      // Galon = kategori galon → punya WADAH (GalonLedger). Diikat agar konsisten.
-      isGalon: Value(_category == 'galon'),
+      // Gallon = 'gallon' category → has a CONTAINER (GallonLedger).
+      // Bound together to stay consistent.
+      isGallon: Value(_category == 'gallon'),
       buyPrice: Value(double.tryParse(_buy.text) ?? 0),
       sellPrice: Value(double.tryParse(_sell.text) ?? 0),
       packUnit: Value(packUnit.isEmpty ? null : packUnit),
@@ -158,11 +168,11 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
               decoration: const InputDecoration(labelText: 'Kategori'),
               items: [
                 for (final c in _categories)
-                  DropdownMenuItem(value: c, child: Text(c)),
+                  DropdownMenuItem(value: c.value, child: Text(c.label)),
               ],
               onChanged: (v) => setState(() => _category = v!),
             ),
-            if (_category == 'galon')
+            if (_category == 'gallon')
               const Padding(
                 padding: EdgeInsets.only(top: 4),
                 child: Text(

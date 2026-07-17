@@ -4,8 +4,8 @@ import '../../data/database/database.dart';
 
 class PurchaseLine {
   final int productId;
-  final int qtyBase; // dalam satuan dasar
-  final double price; // harga beli per base unit
+  final int qtyBase; // in base units
+  final double price; // buy price per base unit
   const PurchaseLine({
     required this.productId,
     required this.qtyBase,
@@ -18,16 +18,17 @@ class PurchaseService {
   final AppDatabase db;
   PurchaseService(this.db);
 
-  /// Catat 1 pembelian/kulakan. Atomik: header + item + kartu stok (masuk) +
-  /// buku kas (keluar). Kebalikan dari SalesService.recordSale.
+  /// Record one purchase/restock. Atomic: header + items + stock card (in) +
+  /// cash book (out). The inverse of SalesService.recordSale.
   ///
-  /// Untuk kulakan galon isi dengan tukar kosong, panggil juga
-  /// GalonService.recordRestockExchange — air lewat sini, wadah lewat sana.
+  /// To restock filled gallons with an empty swap, also call
+  /// GallonService.recordRestockExchange — water goes here, the container
+  /// goes there.
   Future<int> recordPurchase({
     required List<PurchaseLine> lines,
     int? supplierId,
-    String paymentStatus = 'lunas', // 'lunas' | 'utang'
-    String account = 'kas',
+    String paymentStatus = 'paid', // 'paid' | 'debt'
+    String account = 'cash',
     String? note,
   }) async {
     final total = lines.fold<double>(0, (sum, l) => sum + l.subtotal);
@@ -53,11 +54,11 @@ class PurchaseService {
               ),
             );
 
-        // Kartu stok: stok MASUK (positif).
+        // Stock card: stock IN (positive).
         await db.into(db.stockMovements).insert(
               StockMovementsCompanion.insert(
                 productId: l.productId,
-                type: 'pembelian',
+                type: 'purchase',
                 qtyBase: l.qtyBase,
                 refType: const Value('purchase'),
                 refId: Value(purchaseId),
@@ -65,14 +66,14 @@ class PurchaseService {
             );
       }
 
-      // Buku kas: uang KELUAR — hanya kalau lunas. Kalau utang, lewati dan
-      // catat pelunasan nanti saat fitur utang ditambah (Fase 2).
-      if (paymentStatus == 'lunas') {
+      // Cash book: money OUT — only when paid. If debt, skip and record the
+      // payment later when the debt feature is added (Phase 2).
+      if (paymentStatus == 'paid') {
         await db.into(db.cashEntries).insert(
               CashEntriesCompanion.insert(
-                direction: 'keluar',
+                direction: 'out',
                 amount: total,
-                category: 'pembelian',
+                category: 'purchase',
                 account: Value(account),
                 refType: const Value('purchase'),
                 refId: Value(purchaseId),
