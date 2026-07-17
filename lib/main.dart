@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'data/database/database.dart';
 import 'domain/services/cashier_service.dart';
 import 'domain/services/galon_service.dart';
+import 'domain/services/product_service.dart';
 import 'domain/services/purchase_service.dart';
 import 'domain/services/reports_service.dart';
 import 'domain/services/sales_service.dart';
@@ -30,6 +32,21 @@ final cashierServiceProvider =
     Provider((ref) => CashierService(ref.watch(dbProvider)));
 final purchaseServiceProvider =
     Provider((ref) => PurchaseService(ref.watch(dbProvider)));
+final productServiceProvider =
+    Provider((ref) => ProductService(ref.watch(dbProvider)));
+
+/// Semua produk (aktif + nonaktif), live — untuk layar master produk.
+/// Aktif dulu, lalu per kategori & nama.
+final allProductsProvider = StreamProvider<List<Product>>((ref) {
+  final db = ref.watch(dbProvider);
+  return (db.select(db.products)
+        ..orderBy([
+          (p) => OrderingTerm.desc(p.active),
+          (p) => OrderingTerm.asc(p.category),
+          (p) => OrderingTerm.asc(p.name),
+        ]))
+      .watch();
+});
 
 // --- Peran ------------------------------------------------------------------
 

@@ -1,9 +1,11 @@
 import 'package:amdk_pos/data/database/database.dart';
 import 'package:amdk_pos/domain/services/cashier_service.dart';
 import 'package:amdk_pos/domain/services/galon_service.dart';
+import 'package:amdk_pos/domain/services/product_service.dart';
 import 'package:amdk_pos/domain/services/purchase_service.dart';
 import 'package:amdk_pos/domain/services/reports_service.dart';
 import 'package:amdk_pos/domain/services/sales_service.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -164,5 +166,43 @@ void main() {
     final jual = r.byCategory.firstWhere((c) => c.category == 'penjualan');
     expect(jual.masuk, gelas.sellPrice * 8 + botol.sellPrice * 2);
     expect(jual.keluar, 0);
+  });
+
+  test('master produk: tambah, edit, nonaktif hilang dari daftar aktif', () async {
+    final svc = ProductService(db);
+
+    Future<List<Product>> active() =>
+        (db.select(db.products)..where((t) => t.active.equals(true))).get();
+    final before = (await active()).length;
+
+    // Tambah galon baru → isGalon otomatis dari kategori.
+    await svc.save(const ProductsCompanion(
+      name: Value('Galon RO 19L'),
+      category: Value('galon'),
+      isGalon: Value(true),
+      buyPrice: Value(14000),
+      sellPrice: Value(17000),
+    ));
+    var rows = await active();
+    expect(rows.length, before + 1);
+    final baru = rows.firstWhere((p) => p.name == 'Galon RO 19L');
+    expect(baru.isGalon, isTrue);
+
+    // Edit harga jual.
+    await svc.save(const ProductsCompanion(sellPrice: Value(18000)),
+        id: baru.id);
+    final edited = await (db.select(db.products)
+          ..where((t) => t.id.equals(baru.id)))
+        .getSingle();
+    expect(edited.sellPrice, 18000);
+    expect(edited.name, 'Galon RO 19L'); // field lain tak tersentuh
+
+    // Nonaktifkan → hilang dari daftar aktif, baris tetap ada.
+    await svc.setActive(baru.id, false);
+    expect((await active()).where((p) => p.id == baru.id), isEmpty);
+    expect(
+        await (db.select(db.products)..where((t) => t.id.equals(baru.id)))
+            .getSingleOrNull(),
+        isNotNull);
   });
 }
