@@ -1,0 +1,90 @@
+import 'package:amdk_pos/data/database/database.dart';
+import 'package:amdk_pos/domain/services/cashier_service.dart';
+import 'package:amdk_pos/domain/services/galon_service.dart';
+import 'package:amdk_pos/domain/services/reports_service.dart';
+import 'package:amdk_pos/domain/services/sales_service.dart';
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  late AppDatabase db;
+
+  setUp(() => db = AppDatabase(NativeDatabase.memory()));
+  tearDown(() => db.close());
+
+  test('seed produk terisi saat DB dibuat', () async {
+    final products = await db.select(db.products).get();
+    expect(products, isNotEmpty);
+    expect(products.where((p) => p.isGalon), isNotEmpty);
+    expect(products.every((p) => p.sellPrice > p.buyPrice), isTrue);
+  });
+
+  test('recordSale: stok keluar, kas masuk, omzet benar', () async {
+    final sales = SalesService(db);
+    final p = await (db.select(db.products)
+          ..where((t) => t.isGalon.equals(false))
+          ..limit(1))
+        .getSingle();
+
+    await sales.recordSale(lines: [
+      SaleLine(productId: p.id, qtyBase: 3, price: p.sellPrice),
+    ]);
+
+    expect(await db.stockOf(p.id), -3); // belum ada kulakan → minus
+    expect(await db.cashBalance(), p.sellPrice * 3);
+
+    final summary = await ReportsService(db).dailySummary(DateTime.now());
+    expect(summary.omzet, p.sellPrice * 3);
+    expect(summary.labaKotor, (p.sellPrice - p.buyPrice) * 3);
+  });
+
+  test('galon: jual baru + deposit, lalu tukar, saldo wadah konsisten', () async {
+    final galon = GalonService(db);
+
+    // Kulakan 10 galon isi (tukar kosong — saldo kosong jadi minus, wajar
+    // untuk stok awal; penyesuaian stok awal menyusul di UI stok).
+    await galon.recordRestockExchange(qty: 10);
+
+    // Pelanggan baru: 2 galon + deposit.
+    await galon.recordNewGalonSale(qty: 2, depositPerGalon: 40000);
+    var b = await db.galonBalance();
+    expect(b.full, 8);
+    expect(b.depositOut, 2); // wadah beredar = kewajiban
+
+    // Deposit masuk kas TAPI bukan omzet.
+    expect(await db.cashBalance(), 80000);
+    final summary = await ReportsService(db).dailySummary(DateTime.now());
+    expect(summary.omzet, 0);
+
+    // Langganan: tukar 1 galon.
+    await galon.recordExchange(qty: 1);
+    b = await db.galonBalance();
+    expect(b.full, 7);
+    expect(b.empty, -10 + 1); // -10 dari kulakan tukar + 1 dari pelanggan
+    expect(b.depositOut, 2);
+  });
+
+  test('tutup kasir: selisih dicatat sebagai penyesuaian, bukan overwrite', () async {
+    final sales = SalesService(db);
+    final cashier = CashierService(db);
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+
+    await sales.recordSale(
+        lines: [SaleLine(productId: p.id, qtyBase: 1, price: p.sellPrice)]);
+    final systemBalance = await db.cashBalance();
+
+    expect(await cashier.openingBalance(), 0); // belum pernah tutup
+
+    // Fisik kurang dari sistem (misal ada uang kembalian salah hitung).
+    final shortage = 500.0;
+    await cashier.recordClosing(physicalCount: systemBalance - shortage);
+
+    // Selisih tercatat sebagai baris kas baru, bukan mengubah baris lama.
+    expect(await db.cashBalance(), systemBalance - shortage);
+    final entries = await db.select(db.cashEntries).get();
+    expect(entries.where((e) => e.category == 'penyesuaian'), hasLength(1));
+
+    // Closing berikutnya mulai dari hitungan fisik closing sebelumnya.
+    expect(await cashier.openingBalance(), systemBalance - shortage);
+  });
+}
