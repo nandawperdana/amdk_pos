@@ -111,13 +111,17 @@ build --delete-conflicting-outputs`.
 
 Fase 1 selesai. Lanjut ke Fase 2:
 
-1. Sinkronisasi cloud (Supabase) — aktifkan `SyncService.pushPending`
-   (push-only, idempotent by clientId). Owner baca laporan dari cloud.
+1. Sinkronisasi cloud (Supabase) — layer sudah dibangun (`SyncService`,
+   cursor-based, gated di kredensial). Sisanya: owner buat project Supabase
+   + jalankan `doc/supabase_setup.sql`, lalu live round-trip diuji.
 2. Piutang/utang — pelunasan penjualan kredit & pembelian utang (sekarang
    penjualan piutang & kulakan utang sengaja lewati baris kas).
-3. Harga reseller (kolom/aturan harga per tipe pelanggan) + QRIS/transfer
-   sebagai metode pelunasan.
-4. Laba-rugi & arus kas periode.
+3. Laba-rugi & arus kas periode.
+
+DITUNDA (belum ada kebutuhan):
+- Harga reseller — belum berencana punya reseller. Tabel `Customers.type`
+  sudah punya nilai `reseller`, tapi harga per-tipe tak diimplementasi dulu
+  (YAGNI). Aktifkan kalau reseller benar-benar ada.
 
 ## Konvensi
 
