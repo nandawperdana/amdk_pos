@@ -18,6 +18,7 @@ part 'database.g.dart'; // jalankan: dart run build_runner build
     CashEntries,
     GalonLedger,
     CashierClosings,
+    SyncCursors,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -25,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'amdk_pos'));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -35,6 +36,7 @@ class AppDatabase extends _$AppDatabase {
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) await m.createTable(cashierClosings);
+          if (from < 3) await m.createTable(syncCursors);
         },
       );
 

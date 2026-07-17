@@ -1,11 +1,15 @@
+import 'dart:math';
+
 import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/database/database.dart';
+import 'data/sync/sync_service.dart';
 import 'domain/services/cashier_service.dart';
 import 'domain/services/galon_service.dart';
 import 'domain/services/opname_service.dart';
@@ -38,6 +42,26 @@ final productServiceProvider =
     Provider((ref) => ProductService(ref.watch(dbProvider)));
 final opnameServiceProvider =
     Provider((ref) => OpnameService(ref.watch(dbProvider)));
+
+/// Client Supabase — di-override di main() kalau kredensial ada, else null
+/// (sync nonaktif, app tetap jalan offline).
+final syncClientProvider = Provider<SupabaseClient?>((ref) => null);
+
+final syncServiceProvider = Provider((ref) => SyncService(
+      ref.watch(dbProvider),
+      deviceId: _deviceId(ref.watch(prefsProvider)),
+      client: ref.watch(syncClientProvider),
+    ));
+
+/// Id device stabil per install (untuk PK mirror Postgres). Dibuat sekali.
+String _deviceId(SharedPreferences prefs) {
+  var id = prefs.getString('device_id');
+  if (id == null) {
+    id = 'dev-${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(0x7fffffff)}';
+    prefs.setString('device_id', id);
+  }
+  return id;
+}
 
 /// Semua produk (aktif + nonaktif), live — untuk layar master produk.
 /// Aktif dulu, lalu per kategori & nama.
@@ -91,12 +115,28 @@ final roleProvider = NotifierProvider<RoleNotifier, AppRole?>(RoleNotifier.new);
 
 // --- App --------------------------------------------------------------------
 
+/// Kredensial Supabase lewat --dart-define (JANGAN commit rahasia).
+/// Kosong → sync nonaktif, app jalan offline seperti biasa.
+///   fvm flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
+const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('id_ID'); // format Rp & tanggal Indonesia
   final prefs = await SharedPreferences.getInstance();
+
+  SupabaseClient? syncClient;
+  if (_supabaseUrl.isNotEmpty && _supabaseAnonKey.isNotEmpty) {
+    await Supabase.initialize(url: _supabaseUrl, publishableKey: _supabaseAnonKey);
+    syncClient = Supabase.instance.client;
+  }
+
   runApp(ProviderScope(
-    overrides: [prefsProvider.overrideWithValue(prefs)],
+    overrides: [
+      prefsProvider.overrideWithValue(prefs),
+      syncClientProvider.overrideWithValue(syncClient),
+    ],
     child: const AmdkPosApp(),
   ));
 }
@@ -206,6 +246,8 @@ class OwnerScreen extends ConsumerWidget {
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.invalidate(ownerSummaryProvider),
           ),
+          if (ref.watch(syncServiceProvider).enabled)
+            const _SyncButton(),
           IconButton(
             icon: const Icon(Icons.switch_account),
             tooltip: 'Ganti Peran',
@@ -242,4 +284,46 @@ class OwnerScreen extends ConsumerWidget {
                   const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
         ),
       );
+}
+
+/// Tombol push sync ke cloud. Muncul hanya kalau kredensial Supabase ada.
+class _SyncButton extends ConsumerStatefulWidget {
+  const _SyncButton();
+
+  @override
+  ConsumerState<_SyncButton> createState() => _SyncButtonState();
+}
+
+class _SyncButtonState extends ConsumerState<_SyncButton> {
+  bool _busy = false;
+
+  Future<void> _sync() async {
+    setState(() => _busy = true);
+    try {
+      final n = await ref.read(syncServiceProvider).pushPending();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Sync: $n baris terkirim ke cloud')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Sync gagal: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Sync ke cloud',
+      icon: _busy
+          ? const SizedBox(
+              width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.cloud_upload_outlined),
+      onPressed: _busy ? null : _sync,
+    );
+  }
 }

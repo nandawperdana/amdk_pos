@@ -172,3 +172,19 @@ class GalonLedger extends Table {
   IntColumn get refId => integer().nullable()();
   TextColumn get note => text().nullable()();
 }
+
+// ===========================================================================
+// METADATA SYNC (bukan ledger — boleh di-UPDATE)
+// ===========================================================================
+
+/// Penanda batas atas sinkronisasi per tabel. Karena tiap tabel data
+/// bersifat append-only + baris immutable, sinkronisasi push-only cukup
+/// mengirim baris dengan id > lastId, lalu majukan lastId. Tak perlu flag
+/// per-baris atau mutasi baris ledger.
+class SyncCursors extends Table {
+  TextColumn get entity => text()(); // nama tabel yang disinkronkan
+  IntColumn get lastId => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {entity};
+}

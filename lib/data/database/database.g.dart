@@ -4183,6 +4183,195 @@ class CashierClosingsCompanion extends UpdateCompanion<CashierClosing> {
   }
 }
 
+class $SyncCursorsTable extends SyncCursors
+    with TableInfo<$SyncCursorsTable, SyncCursor> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncCursorsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _entityMeta = const VerificationMeta('entity');
+  @override
+  late final GeneratedColumn<String> entity = GeneratedColumn<String>(
+      'entity', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _lastIdMeta = const VerificationMeta('lastId');
+  @override
+  late final GeneratedColumn<int> lastId = GeneratedColumn<int>(
+      'last_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [entity, lastId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_cursors';
+  @override
+  VerificationContext validateIntegrity(Insertable<SyncCursor> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('entity')) {
+      context.handle(_entityMeta,
+          entity.isAcceptableOrUnknown(data['entity']!, _entityMeta));
+    } else if (isInserting) {
+      context.missing(_entityMeta);
+    }
+    if (data.containsKey('last_id')) {
+      context.handle(_lastIdMeta,
+          lastId.isAcceptableOrUnknown(data['last_id']!, _lastIdMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {entity};
+  @override
+  SyncCursor map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncCursor(
+      entity: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}entity'])!,
+      lastId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}last_id'])!,
+    );
+  }
+
+  @override
+  $SyncCursorsTable createAlias(String alias) {
+    return $SyncCursorsTable(attachedDatabase, alias);
+  }
+}
+
+class SyncCursor extends DataClass implements Insertable<SyncCursor> {
+  final String entity;
+  final int lastId;
+  const SyncCursor({required this.entity, required this.lastId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['entity'] = Variable<String>(entity);
+    map['last_id'] = Variable<int>(lastId);
+    return map;
+  }
+
+  SyncCursorsCompanion toCompanion(bool nullToAbsent) {
+    return SyncCursorsCompanion(
+      entity: Value(entity),
+      lastId: Value(lastId),
+    );
+  }
+
+  factory SyncCursor.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncCursor(
+      entity: serializer.fromJson<String>(json['entity']),
+      lastId: serializer.fromJson<int>(json['lastId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'entity': serializer.toJson<String>(entity),
+      'lastId': serializer.toJson<int>(lastId),
+    };
+  }
+
+  SyncCursor copyWith({String? entity, int? lastId}) => SyncCursor(
+        entity: entity ?? this.entity,
+        lastId: lastId ?? this.lastId,
+      );
+  SyncCursor copyWithCompanion(SyncCursorsCompanion data) {
+    return SyncCursor(
+      entity: data.entity.present ? data.entity.value : this.entity,
+      lastId: data.lastId.present ? data.lastId.value : this.lastId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncCursor(')
+          ..write('entity: $entity, ')
+          ..write('lastId: $lastId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(entity, lastId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncCursor &&
+          other.entity == this.entity &&
+          other.lastId == this.lastId);
+}
+
+class SyncCursorsCompanion extends UpdateCompanion<SyncCursor> {
+  final Value<String> entity;
+  final Value<int> lastId;
+  final Value<int> rowid;
+  const SyncCursorsCompanion({
+    this.entity = const Value.absent(),
+    this.lastId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncCursorsCompanion.insert({
+    required String entity,
+    this.lastId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : entity = Value(entity);
+  static Insertable<SyncCursor> custom({
+    Expression<String>? entity,
+    Expression<int>? lastId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (entity != null) 'entity': entity,
+      if (lastId != null) 'last_id': lastId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncCursorsCompanion copyWith(
+      {Value<String>? entity, Value<int>? lastId, Value<int>? rowid}) {
+    return SyncCursorsCompanion(
+      entity: entity ?? this.entity,
+      lastId: lastId ?? this.lastId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (entity.present) {
+      map['entity'] = Variable<String>(entity.value);
+    }
+    if (lastId.present) {
+      map['last_id'] = Variable<int>(lastId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncCursorsCompanion(')
+          ..write('entity: $entity, ')
+          ..write('lastId: $lastId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4198,6 +4387,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $GalonLedgerTable galonLedger = $GalonLedgerTable(this);
   late final $CashierClosingsTable cashierClosings =
       $CashierClosingsTable(this);
+  late final $SyncCursorsTable syncCursors = $SyncCursorsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4213,7 +4403,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         stockMovements,
         cashEntries,
         galonLedger,
-        cashierClosings
+        cashierClosings,
+        syncCursors
       ];
 }
 
@@ -6351,6 +6542,128 @@ typedef $$CashierClosingsTableProcessedTableManager = ProcessedTableManager<
     ),
     CashierClosing,
     PrefetchHooks Function()>;
+typedef $$SyncCursorsTableCreateCompanionBuilder = SyncCursorsCompanion
+    Function({
+  required String entity,
+  Value<int> lastId,
+  Value<int> rowid,
+});
+typedef $$SyncCursorsTableUpdateCompanionBuilder = SyncCursorsCompanion
+    Function({
+  Value<String> entity,
+  Value<int> lastId,
+  Value<int> rowid,
+});
+
+class $$SyncCursorsTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncCursorsTable> {
+  $$SyncCursorsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get entity => $composableBuilder(
+      column: $table.entity, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastId => $composableBuilder(
+      column: $table.lastId, builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncCursorsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncCursorsTable> {
+  $$SyncCursorsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get entity => $composableBuilder(
+      column: $table.entity, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lastId => $composableBuilder(
+      column: $table.lastId, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncCursorsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncCursorsTable> {
+  $$SyncCursorsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get entity =>
+      $composableBuilder(column: $table.entity, builder: (column) => column);
+
+  GeneratedColumn<int> get lastId =>
+      $composableBuilder(column: $table.lastId, builder: (column) => column);
+}
+
+class $$SyncCursorsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $SyncCursorsTable,
+    SyncCursor,
+    $$SyncCursorsTableFilterComposer,
+    $$SyncCursorsTableOrderingComposer,
+    $$SyncCursorsTableAnnotationComposer,
+    $$SyncCursorsTableCreateCompanionBuilder,
+    $$SyncCursorsTableUpdateCompanionBuilder,
+    (SyncCursor, BaseReferences<_$AppDatabase, $SyncCursorsTable, SyncCursor>),
+    SyncCursor,
+    PrefetchHooks Function()> {
+  $$SyncCursorsTableTableManager(_$AppDatabase db, $SyncCursorsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncCursorsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncCursorsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncCursorsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> entity = const Value.absent(),
+            Value<int> lastId = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncCursorsCompanion(
+            entity: entity,
+            lastId: lastId,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String entity,
+            Value<int> lastId = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncCursorsCompanion.insert(
+            entity: entity,
+            lastId: lastId,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncCursorsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $SyncCursorsTable,
+    SyncCursor,
+    $$SyncCursorsTableFilterComposer,
+    $$SyncCursorsTableOrderingComposer,
+    $$SyncCursorsTableAnnotationComposer,
+    $$SyncCursorsTableCreateCompanionBuilder,
+    $$SyncCursorsTableUpdateCompanionBuilder,
+    (SyncCursor, BaseReferences<_$AppDatabase, $SyncCursorsTable, SyncCursor>),
+    SyncCursor,
+    PrefetchHooks Function()>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6377,4 +6690,6 @@ class $AppDatabaseManager {
       $$GalonLedgerTableTableManager(_db, _db.galonLedger);
   $$CashierClosingsTableTableManager get cashierClosings =>
       $$CashierClosingsTableTableManager(_db, _db.cashierClosings);
+  $$SyncCursorsTableTableManager get syncCursors =>
+      $$SyncCursorsTableTableManager(_db, _db.syncCursors);
 }

@@ -6,6 +6,7 @@ import 'package:amdk_pos/domain/services/product_service.dart';
 import 'package:amdk_pos/domain/services/purchase_service.dart';
 import 'package:amdk_pos/domain/services/reports_service.dart';
 import 'package:amdk_pos/domain/services/sales_service.dart';
+import 'package:amdk_pos/data/sync/sync_service.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -240,5 +241,27 @@ void main() {
     expect(b.full, 10);
     expect(b.empty, 5); // -10 dikoreksi +15 jadi 5
     expect(b.depositOut, 0);
+  });
+
+  test('sync: pendingRows hormati cursor per tabel', () async {
+    final sync = SyncService(db, deviceId: 'dev-test');
+
+    // Seed = 8 produk, cursor 0 → semua tertunda.
+    var pending = await sync.pendingRows(db.products);
+    expect(pending.length, 8);
+    expect(pending.first['id'], 1);
+    expect(pending.first.containsKey('name'), isTrue);
+
+    // Majukan cursor ke 5 → hanya id 6,7,8 tertunda.
+    await db.into(db.syncCursors).insertOnConflictUpdate(
+        SyncCursorsCompanion.insert(entity: 'products', lastId: const Value(5)));
+    pending = await sync.pendingRows(db.products);
+    expect(pending.map((r) => r['id']), [6, 7, 8]);
+  });
+
+  test('sync: pushPending no-op tanpa client (offline)', () async {
+    final sync = SyncService(db, deviceId: 'dev-test'); // client null
+    expect(sync.enabled, isFalse);
+    expect(await sync.pushPending(), 0);
   });
 }
