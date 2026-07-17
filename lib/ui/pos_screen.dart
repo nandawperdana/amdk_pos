@@ -7,7 +7,9 @@ import '../data/database/database.dart';
 import '../domain/services/sales_service.dart';
 import '../main.dart';
 import 'cashier_closing_screen.dart';
+import 'credit_screen.dart';
 import 'master_product_screen.dart';
+import 'party_picker.dart';
 import 'purchase_screen.dart';
 import 'stock_take_screen.dart';
 
@@ -162,12 +164,29 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     ),
                   ),
                 ),
+              // Credit (bon): whole sale becomes a customer's tab. Gallon
+              // deposit is still collected in cash.
+              SizedBox(
+                height: 56,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.receipt_long),
+                  label: const Text('Piutang (bon)'),
+                  onPressed: () => Navigator.pop(ctx, 'credit'),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
     if (method == null || !mounted) return;
+
+    // Credit needs a customer.
+    Party? customer;
+    if (method == 'credit') {
+      customer = await pickParty(context, ref, isCustomer: true);
+      if (customer == null || !mounted) return; // cancelled → abort save
+    }
 
     setState(() => _saving = true);
     try {
@@ -189,7 +208,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 qtyBase: l.qty,
                 price: l.product.sellPrice),
         ],
-        paymentMethod: method,
+        paymentMethod: method == 'credit' ? 'cash' : method,
+        paymentStatus: method == 'credit' ? 'receivable' : 'paid',
+        customerId: customer?.id,
         account: account,
       );
 
@@ -210,9 +231,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'Tersimpan — ${rupiah.format(_total + _depositTotal)}')));
+        final msg = method == 'credit'
+            ? 'Piutang ${customer!.name} — ${rupiah.format(_total)}'
+                '${_depositTotal > 0 ? ' (+ deposit ${rupiah.format(_depositTotal)} tunai)' : ''}'
+            : 'Tersimpan — ${rupiah.format(_total + _depositTotal)}';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(msg)));
         setState(_cart.clear);
       }
     } finally {
@@ -260,6 +284,13 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 child: const ListTile(
                     leading: Icon(Icons.fact_check_outlined),
                     title: Text('Opname Stok')),
+              ),
+              PopupMenuItem(
+                value: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const CreditScreen())),
+                child: const ListTile(
+                    leading: Icon(Icons.account_balance_wallet_outlined),
+                    title: Text('Piutang & Utang')),
               ),
               PopupMenuItem(
                 value: () => ref.read(roleProvider.notifier).select(null),

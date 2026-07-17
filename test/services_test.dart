@@ -1,6 +1,7 @@
 import 'package:amdk_pos/data/database/database.dart';
 import 'package:amdk_pos/data/sync/sync_service.dart';
 import 'package:amdk_pos/domain/services/cashier_service.dart';
+import 'package:amdk_pos/domain/services/credit_service.dart';
 import 'package:amdk_pos/domain/services/gallon_service.dart';
 import 'package:amdk_pos/domain/services/product_service.dart';
 import 'package:amdk_pos/domain/services/purchase_service.dart';
@@ -265,5 +266,86 @@ void main() {
     final sync = SyncService(db, deviceId: 'dev-test'); // client null
     expect(sync.enabled, isFalse);
     expect(await sync.pushPending(), 0);
+  });
+
+  test('credit sale: no cash in, revenue still counts, receivable tracked',
+      () async {
+    final sales = SalesService(db);
+    final credit = CreditService(db);
+    final customerId =
+        await db.into(db.customers).insert(CustomersCompanion.insert(name: 'Warung Bu Ani'));
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+
+    await sales.recordSale(
+      lines: [SaleLine(productId: p.id, qtyBase: 4, price: p.sellPrice)],
+      customerId: customerId,
+      paymentStatus: 'receivable',
+    );
+
+    // No cash collected yet…
+    expect(await db.cashBalance(), 0);
+    // …but revenue is booked and stock went out.
+    final summary = await ReportsService(db).dailySummary(DateTime.now());
+    expect(summary.revenue, p.sellPrice * 4);
+    expect(await db.stockOf(p.id), -4);
+    // Receivable = the sale total.
+    expect(await credit.receivableBalance(customerId), p.sellPrice * 4);
+  });
+
+  test('receivable payment: cash in, balance drops, not double-counted revenue',
+      () async {
+    final sales = SalesService(db);
+    final credit = CreditService(db);
+    final customerId =
+        await db.into(db.customers).insert(CustomersCompanion.insert(name: 'Warung Bu Ani'));
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+    final total = p.sellPrice * 4;
+
+    await sales.recordSale(
+      lines: [SaleLine(productId: p.id, qtyBase: 4, price: p.sellPrice)],
+      customerId: customerId,
+      paymentStatus: 'receivable',
+    );
+
+    // Partial payment.
+    await credit.recordReceivablePayment(customerId: customerId, amount: 5000);
+    expect(await db.cashBalance(), 5000);
+    expect(await credit.receivableBalance(customerId), total - 5000);
+    expect((await credit.customersWithReceivable()).single.balance, total - 5000);
+
+    // Pay the rest → balance zero, drops off the list.
+    await credit.recordReceivablePayment(
+        customerId: customerId, amount: total - 5000);
+    expect(await credit.receivableBalance(customerId), 0);
+    expect(await credit.customersWithReceivable(), isEmpty);
+
+    // Payments are cash, NOT extra revenue (revenue booked once at sale).
+    final summary = await ReportsService(db).dailySummary(DateTime.now());
+    expect(summary.revenue, total);
+    expect(await db.cashBalance(), total);
+  });
+
+  test('supplier debt: purchase on debt then pay, balance drops', () async {
+    final purchase = PurchaseService(db);
+    final credit = CreditService(db);
+    final supplierId =
+        await db.into(db.suppliers).insert(SuppliersCompanion.insert(name: 'Agen Cleo'));
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+    final total = p.buyPrice * 10;
+
+    await purchase.recordPurchase(
+      lines: [PurchaseLine(productId: p.id, qtyBase: 10, price: p.buyPrice)],
+      paymentStatus: 'debt',
+      supplierId: supplierId,
+    );
+
+    expect(await db.stockOf(p.id), 10); // stock in regardless
+    expect(await db.cashBalance(), 0); // no cash out yet
+    expect(await credit.debtBalance(supplierId), total);
+
+    await credit.recordDebtPayment(supplierId: supplierId, amount: total);
+    expect(await db.cashBalance(), -total); // cash out on payment
+    expect(await credit.debtBalance(supplierId), 0);
+    expect(await credit.suppliersWithDebt(), isEmpty);
   });
 }

@@ -23,6 +23,8 @@ const _categoryLabel = {
   'sale': 'Penjualan',
   'purchase': 'Pembelian/kulakan',
   'gallon_deposit': 'Deposit galon',
+  'receivable_payment': 'Pelunasan piutang',
+  'debt_payment': 'Pembayaran utang',
   'adjustment': 'Penyesuaian kas',
   'expense': 'Biaya',
   'capital': 'Modal',

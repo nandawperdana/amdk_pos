@@ -24,13 +24,22 @@ class SalesService {
   ///
   /// For gallon sales, also call GallonService afterwards with the returned
   /// saleId (water goes through here, the container through there).
+  ///
+  /// On credit (paymentStatus 'receivable'): the sale is still revenue and
+  /// stock still goes out, but NO cash row is written — the customer owes it.
+  /// Collect later via CreditService.recordReceivablePayment. Requires a
+  /// customerId so we know who owes. The gallon deposit (if any) is still
+  /// collected in cash by GallonService.recordNewGallonSale.
   Future<int> recordSale({
     required List<SaleLine> lines,
     int? customerId,
     String paymentMethod = 'cash',
+    String paymentStatus = 'paid', // 'paid' | 'receivable'
     String account = 'cash',
     String? note,
   }) async {
+    assert(paymentStatus != 'receivable' || customerId != null,
+        'Credit sale needs a customerId');
     final total = lines.fold<double>(0, (sum, l) => sum + l.subtotal);
 
     return db.transaction(() async {
@@ -39,6 +48,7 @@ class SalesService {
               customerId: Value(customerId),
               totalAmount: Value(total),
               paymentMethod: Value(paymentMethod),
+              paymentStatus: Value(paymentStatus),
               note: Value(note),
             ),
           );
@@ -66,19 +76,20 @@ class SalesService {
             );
       }
 
-      // Cash book: money IN (for cash/qris/transfer sales).
-      // For credit sales (receivable), skip this row and record the payment
-      // later — adjust when the receivables feature lands in Phase 2.
-      await db.into(db.cashEntries).insert(
-            CashEntriesCompanion.insert(
-              direction: 'in',
-              amount: total,
-              category: 'sale',
-              account: Value(account),
-              refType: const Value('sale'),
-              refId: Value(saleId),
-            ),
-          );
+      // Cash book: money IN — only for paid sales. Credit sales (receivable)
+      // skip this row; the payment is recorded later via CreditService.
+      if (paymentStatus != 'receivable') {
+        await db.into(db.cashEntries).insert(
+              CashEntriesCompanion.insert(
+                direction: 'in',
+                amount: total,
+                category: 'sale',
+                account: Value(account),
+                refType: const Value('sale'),
+                refId: Value(saleId),
+              ),
+            );
+      }
 
       return saleId;
     });

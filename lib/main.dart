@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'data/database/database.dart';
 import 'data/sync/sync_service.dart';
 import 'domain/services/cashier_service.dart';
+import 'domain/services/credit_service.dart';
 import 'domain/services/gallon_service.dart';
 import 'domain/services/product_service.dart';
 import 'domain/services/purchase_service.dart';
@@ -42,6 +43,20 @@ final productServiceProvider =
     Provider((ref) => ProductService(ref.watch(dbProvider)));
 final stockTakeServiceProvider =
     Provider((ref) => StockTakeService(ref.watch(dbProvider)));
+final creditServiceProvider =
+    Provider((ref) => CreditService(ref.watch(dbProvider)));
+
+/// Live customer & supplier lists (for pickers), by name.
+final customersProvider = StreamProvider<List<Customer>>((ref) {
+  final db = ref.watch(dbProvider);
+  return (db.select(db.customers)..orderBy([(c) => OrderingTerm.asc(c.name)]))
+      .watch();
+});
+final suppliersProvider = StreamProvider<List<Supplier>>((ref) {
+  final db = ref.watch(dbProvider);
+  return (db.select(db.suppliers)..orderBy([(s) => OrderingTerm.asc(s.name)]))
+      .watch();
+});
 
 /// Supabase client — overridden in main() when credentials exist, else null
 /// (sync disabled, app still runs offline).

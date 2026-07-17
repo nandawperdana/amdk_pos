@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/database/database.dart';
 import '../domain/services/purchase_service.dart';
 import '../main.dart';
+import 'party_picker.dart';
 import 'pos_screen.dart' show activeProductsProvider, rupiah;
 
 class PurchaseCartLine {
@@ -30,6 +31,7 @@ class PurchaseScreen extends ConsumerStatefulWidget {
 class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
   final List<PurchaseCartLine> _cart = [];
   String _paymentStatus = 'paid'; // 'paid' | 'debt'
+  Party? _supplier; // required when debt (so we know whom we owe)
   bool _saving = false;
 
   double get _total => _cart.fold(0, (s, l) => s + l.subtotal);
@@ -73,6 +75,13 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
   }
 
   Future<void> _save() async {
+    // Debt needs a supplier so it shows up in Piutang & Utang.
+    if (_paymentStatus == 'debt' && _supplier == null) {
+      final s = await pickParty(context, ref, isCustomer: false);
+      if (s == null || !mounted) return;
+      setState(() => _supplier = s);
+    }
+
     setState(() => _saving = true);
     try {
       final purchases = ref.read(purchaseServiceProvider);
@@ -86,6 +95,7 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
                 productId: l.product.id, qtyBase: l.qty, price: l.price),
         ],
         paymentStatus: _paymentStatus,
+        supplierId: _paymentStatus == 'debt' ? _supplier?.id : null,
       );
 
       // …filled gallon containers (if swapping empties) via GallonService.
@@ -211,6 +221,25 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
               ],
             ),
           ),
+          // Supplier picker, only relevant for debt.
+          if (_paymentStatus == 'debt')
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.local_shipping_outlined, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_supplier?.name ?? 'Supplier belum dipilih')),
+                  TextButton(
+                    onPressed: () async {
+                      final s = await pickParty(context, ref, isCustomer: false);
+                      if (s != null) setState(() => _supplier = s);
+                    },
+                    child: Text(_supplier == null ? 'Pilih' : 'Ganti'),
+                  ),
+                ],
+              ),
+            ),
           Flexible(
             child: ListView.builder(
               shrinkWrap: true,
