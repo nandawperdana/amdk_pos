@@ -102,21 +102,30 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
   penjualan per produk + arus kas per kategori.
 - Owner: dashboard hari ini dari DB lokal (cloud = Fase 2) + tombol ke
   laporan harian.
-- Tes service `test/services_test.dart` (11 tes).
+- Sync cloud (`lib/data/sync/sync_service.dart`) — push-only cursor-based ke
+  Supabase, gated di kredensial `--dart-define`; DDL di `doc/supabase_setup.sql`.
+  Layer jadi & teruji offline; live round-trip nunggu project Supabase.
+- Piutang/utang (`lib/domain/services/credit_service.dart` +
+  `lib/ui/credit_screen.dart` + `party_picker.dart`) — tab per pihak,
+  saldo diturunkan dari SUM, pelunasan append-only. POS punya bayar
+  "Piutang (bon)"; kulakan utang pilih supplier.
+- Tes service `test/services_test.dart` (16 tes).
 
 Pakai **fvm** (Flutter 3.44.0): `fvm flutter ...`, `fvm dart run build_runner
 build --delete-conflicting-outputs`.
 
 ## Langkah berikutnya (urutan disarankan)
 
-Fase 1 selesai. Lanjut ke Fase 2:
+Fase 1 selesai. Fase 2 berjalan — sisa:
 
 1. Sinkronisasi cloud (Supabase) — layer sudah dibangun (`SyncService`,
    cursor-based, gated di kredensial). Sisanya: owner buat project Supabase
    + jalankan `doc/supabase_setup.sql`, lalu live round-trip diuji.
-2. Piutang/utang — pelunasan penjualan kredit & pembelian utang (sekarang
-   penjualan piutang & kulakan utang sengaja lewati baris kas).
-3. Laba-rugi & arus kas periode.
+2. Laba-rugi & arus kas periode (laporan lintas hari/bulan).
+3. QRIS/transfer sebagai metode pelunasan piutang/utang (sekarang pelunasan
+   default akun `cash`).
+
+SELESAI di Fase 2: piutang/utang (tab per pihak, pelunasan append-only).
 
 DITUNDA (belum ada kebutuhan):
 - Harga reseller — belum berencana punya reseller. Tabel `Customers.type`
