@@ -128,8 +128,7 @@ build --delete-conflicting-outputs`.
 
 Fase 1 selesai. Fase 2 berjalan — sisa:
 
-1. Laba-rugi & arus kas periode (laporan lintas hari/bulan).
-2. QRIS/transfer sebagai metode pelunasan piutang/utang (sekarang pelunasan
+1. QRIS/transfer sebagai metode pelunasan piutang/utang (sekarang pelunasan
    default akun `cash`).
 
 SELESAI di Fase 2:
@@ -139,6 +138,10 @@ SELESAI di Fase 2:
   full-merge vs ledger cursor-based, nol duplikat). Jalankan dengan
   `fvm flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`
   (nilai kredensial di catatan pribadi owner, bukan di repo).
+- Laba-rugi & arus kas periode — `ReportsService.periodSummary/periodReport
+  (start, end)`, `dailySummary/dailyReport` jadi wrapper single-day.
+  `lib/ui/daily_report_screen.dart` (layar "Laporan"): preset Hari ini/
+  Minggu ini/Bulan ini + date-range picker custom.
 
 DITUNDA (belum ada kebutuhan):
 - Harga reseller — belum berencana punya reseller. Tabel `Customers.type`
