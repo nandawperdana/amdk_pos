@@ -26,12 +26,13 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'amdk_pos'));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
+          await _createIndexes();
           await _seedProducts();
         },
         onUpgrade: (m, from, to) async {
@@ -43,8 +44,33 @@ class AppDatabase extends _$AppDatabase {
             await (update(products)..where((p) => p.isGallon.equals(true)))
                 .write(const ProductsCompanion(depositPrice: Value(40000)));
           }
+          if (from < 5) await _createIndexes();
+        },
+        beforeOpen: (details) async {
+          // SQLite disables FK enforcement by default; turn it on so the
+          // .references() constraints actually hold (and bad writes roll back).
+          await customStatement('PRAGMA foreign_keys = ON');
         },
       );
+
+  /// Secondary indexes on the hot filter columns. Ledgers only grow, so every
+  /// derivation/report would otherwise be a full table scan.
+  Future<void> _createIndexes() async {
+    const stmts = [
+      'CREATE INDEX IF NOT EXISTS ix_stock_product ON stock_movements(product_id)',
+      'CREATE INDEX IF NOT EXISTS ix_cash_account ON cash_entries(account)',
+      'CREATE INDEX IF NOT EXISTS ix_cash_date ON cash_entries(date)',
+      'CREATE INDEX IF NOT EXISTS ix_cash_ref ON cash_entries(category, ref_type, ref_id)',
+      'CREATE INDEX IF NOT EXISTS ix_sales_date ON sales(date)',
+      'CREATE INDEX IF NOT EXISTS ix_sales_customer ON sales(customer_id, payment_status)',
+      'CREATE INDEX IF NOT EXISTS ix_purchases_supplier ON purchases(supplier_id, payment_status)',
+      'CREATE INDEX IF NOT EXISTS ix_saleitems_sale ON sale_items(sale_id)',
+      'CREATE INDEX IF NOT EXISTS ix_purchaseitems_purchase ON purchase_items(purchase_id)',
+    ];
+    for (final s in stmts) {
+      await customStatement(s);
+    }
+  }
 
   /// Seed initial master products (only when the DB is first created).
   /// Prices are Garut market estimates per base unit — the owner edits them
@@ -112,28 +138,32 @@ class AppDatabase extends _$AppDatabase {
     return row?.read(total) ?? 0;
   }
 
-  /// Cash balance of an account = SUM(in) - SUM(out).
+  /// Cash balance of an account = SUM(in) - SUM(out). Summed in SQLite, not by
+  /// materializing every row in Dart.
+  /// ponytail: still scans the account from genesis. If it gets slow, carry
+  /// forward from the last CashierClosings and only sum entries after it.
   Future<double> cashBalance({String account = 'cash'}) async {
-    final rows = await (select(cashEntries)
-          ..where((t) => t.account.equals(account)))
-        .get();
-    var balance = 0.0;
-    for (final e in rows) {
-      balance += e.direction == 'in' ? e.amount : -e.amount;
-    }
-    return balance;
+    final row = await customSelect(
+      "SELECT COALESCE(SUM(CASE direction WHEN 'in' THEN amount ELSE -amount END), 0) AS bal "
+      'FROM cash_entries WHERE account = ?',
+      variables: [Variable.withString(account)],
+      readsFrom: {cashEntries},
+    ).getSingle();
+    return row.read<double>('bal');
   }
 
-  /// Gallon reconciliation: full, empty, and out on deposit.
+  /// Gallon reconciliation: full, empty, and out on deposit. Summed in SQLite.
   Future<GallonBalance> gallonBalance() async {
-    final rows = await select(gallonLedger).get();
-    var full = 0, empty = 0, deposit = 0;
-    for (final r in rows) {
-      full += r.dFull;
-      empty += r.dEmpty;
-      deposit += r.dDeposit;
-    }
-    return GallonBalance(full: full, empty: empty, depositOut: deposit);
+    final row = await customSelect(
+      'SELECT COALESCE(SUM(d_full), 0) AS f, COALESCE(SUM(d_empty), 0) AS e, '
+      'COALESCE(SUM(d_deposit), 0) AS d FROM gallon_ledger',
+      readsFrom: {gallonLedger},
+    ).getSingle();
+    return GallonBalance(
+      full: row.read<int>('f'),
+      empty: row.read<int>('e'),
+      depositOut: row.read<int>('d'),
+    );
   }
 }
 

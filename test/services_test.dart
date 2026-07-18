@@ -31,7 +31,7 @@ void main() {
   });
 
   test('recordSale: stock out, cash in, revenue correct', () async {
-    final sales = SalesService(db);
+    final sales = SalesService(db, GallonService(db));
     final p = await (db.select(db.products)
           ..where((t) => t.isGallon.equals(false))
           ..limit(1))
@@ -78,7 +78,7 @@ void main() {
 
   test('cashier closing: difference recorded as adjustment, not overwrite',
       () async {
-    final sales = SalesService(db);
+    final sales = SalesService(db, GallonService(db));
     final cashier = CashierService(db);
     final p = await (db.select(db.products)..limit(1)).getSingle();
 
@@ -102,7 +102,7 @@ void main() {
   });
 
   test('purchase paid: stock in, cash out', () async {
-    final purchase = PurchaseService(db);
+    final purchase = PurchaseService(db, GallonService(db));
     final p = await (db.select(db.products)..limit(1)).getSingle();
 
     await purchase.recordPurchase(
@@ -113,7 +113,7 @@ void main() {
   });
 
   test('purchase on debt: stock in, cash UNCHANGED', () async {
-    final purchase = PurchaseService(db);
+    final purchase = PurchaseService(db, GallonService(db));
     final p = await (db.select(db.products)..limit(1)).getSingle();
 
     await purchase.recordPurchase(
@@ -126,7 +126,7 @@ void main() {
   });
 
   test('gallon restock + empty swap: water stock up, container moves', () async {
-    final purchase = PurchaseService(db);
+    final purchase = PurchaseService(db, GallonService(db));
     final gallon = GallonService(db);
     final g = await (db.select(db.products)..where((t) => t.isGallon.equals(true))
           ..limit(1))
@@ -143,7 +143,7 @@ void main() {
   });
 
   test('daily report: per-product & per-cash-category breakdown', () async {
-    final sales = SalesService(db);
+    final sales = SalesService(db, GallonService(db));
     final reports = ReportsService(db);
     final cup = await (db.select(db.products)
           ..where((t) => t.category.equals('cup'))
@@ -275,7 +275,7 @@ void main() {
 
   test('credit sale: no cash in, revenue still counts, receivable tracked',
       () async {
-    final sales = SalesService(db);
+    final sales = SalesService(db, GallonService(db));
     final credit = CreditService(db);
     final customerId =
         await db.into(db.customers).insert(CustomersCompanion.insert(name: 'Warung Bu Ani'));
@@ -299,7 +299,7 @@ void main() {
 
   test('receivable payment: cash in, balance drops, not double-counted revenue',
       () async {
-    final sales = SalesService(db);
+    final sales = SalesService(db, GallonService(db));
     final credit = CreditService(db);
     final customerId =
         await db.into(db.customers).insert(CustomersCompanion.insert(name: 'Warung Bu Ani'));
@@ -331,7 +331,7 @@ void main() {
   });
 
   test('supplier debt: purchase on debt then pay, balance drops', () async {
-    final purchase = PurchaseService(db);
+    final purchase = PurchaseService(db, GallonService(db));
     final credit = CreditService(db);
     final supplierId =
         await db.into(db.suppliers).insert(SuppliersCompanion.insert(name: 'Agen Cleo'));
@@ -353,4 +353,92 @@ void main() {
     expect(await credit.debtBalance(supplierId), 0);
     expect(await credit.suppliersWithDebt(), isEmpty);
   });
+
+  test('recordSale gallon: container + deposit atomic, customerId attached',
+      () async {
+    final sales = SalesService(db, GallonService(db));
+    final customerId = await db
+        .into(db.customers)
+        .insert(CustomersCompanion.insert(name: 'Pak Budi'));
+    final g = await (db.select(db.products)
+          ..where((t) => t.isGallon.equals(true))
+          ..limit(1))
+        .getSingle();
+
+    // One recordSale call carries the gallon container + deposit.
+    await sales.recordSale(
+      lines: [
+        SaleLine(
+          productId: g.id,
+          qtyBase: 2,
+          price: g.sellPrice,
+          gallonMode: GallonSaleMode.newCustomer,
+          deposit: g.depositPrice,
+        ),
+      ],
+      customerId: customerId,
+    );
+
+    // Water out, container out on deposit, cash = sale + deposit — all written.
+    expect(await db.stockOf(g.id), -2);
+    final b = await db.gallonBalance();
+    expect(b.depositOut, 2);
+    expect(await db.cashBalance(), g.sellPrice * 2 + g.depositPrice * 2);
+
+    // Deposit liability is attributable, not anonymous.
+    final ledger = await (db.select(db.gallonLedger)
+          ..where((t) => t.type.equals('sale_new')))
+        .getSingle();
+    expect(ledger.customerId, customerId);
+  });
+
+  test('recordSale rolls back atomically if the gallon step fails', () async {
+    // The whole sale (water + container) is one transaction: if the gallon
+    // step throws, the already-written header/stock/cash must roll back too.
+    final sales = SalesService(db, _ThrowingGallon(db));
+    final customerId = await db
+        .into(db.customers)
+        .insert(CustomersCompanion.insert(name: 'Pak Budi'));
+    final g = await (db.select(db.products)
+          ..where((t) => t.isGallon.equals(true))
+          ..limit(1))
+        .getSingle();
+
+    await expectLater(
+      sales.recordSale(
+        lines: [
+          SaleLine(
+            productId: g.id,
+            qtyBase: 1,
+            price: g.sellPrice,
+            gallonMode: GallonSaleMode.newCustomer,
+            deposit: g.depositPrice,
+          ),
+        ],
+        customerId: customerId,
+      ),
+      throwsA(anything),
+    );
+
+    // Nothing committed: no sale, no stock move, no cash.
+    expect(await db.select(db.sales).get(), isEmpty);
+    expect(await db.stockOf(g.id), 0);
+    expect(await db.cashBalance(), 0);
+    expect((await db.gallonBalance()).depositOut, 0);
+  });
+}
+
+/// Gallon service that fails the new-sale step, to test transaction rollback.
+class _ThrowingGallon extends GallonService {
+  _ThrowingGallon(super.db);
+  @override
+  Future<void> recordNewGallonSale({
+    required int qty,
+    required double depositPerGallon,
+    int? customerId,
+    int? saleId,
+    String account = 'cash',
+  }) async {
+    throw Exception('gallon step failed');
+  }
 }

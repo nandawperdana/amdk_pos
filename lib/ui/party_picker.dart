@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/database/database.dart';
 import '../main.dart';
 
 typedef Party = ({int id, String name});
@@ -41,15 +40,10 @@ class _PartyPickerState extends ConsumerState<_PartyPicker> {
   Future<void> _addNew() async {
     final name = _newName.text.trim();
     if (name.isEmpty) return;
-    final db = ref.read(dbProvider);
-    final int id;
-    if (widget.isCustomer) {
-      id = await db.into(db.customers).insert(
-          CustomersCompanion.insert(name: name));
-    } else {
-      id = await db.into(db.suppliers).insert(
-          SuppliersCompanion.insert(name: name));
-    }
+    final party = ref.read(partyServiceProvider);
+    final id = widget.isCustomer
+        ? await party.addCustomer(name)
+        : await party.addSupplier(name);
     if (mounted) Navigator.pop<Party>(context, (id: id, name: name));
   }
 

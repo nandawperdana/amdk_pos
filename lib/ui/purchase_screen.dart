@@ -84,31 +84,30 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
 
     setState(() => _saving = true);
     try {
-      final purchases = ref.read(purchaseServiceProvider);
-      final gallon = ref.read(gallonServiceProvider);
-
-      // Water (all lines) via PurchaseService…
-      await purchases.recordPurchase(
-        lines: [
-          for (final l in _cart)
-            PurchaseLine(
-                productId: l.product.id, qtyBase: l.qty, price: l.price),
-        ],
-        paymentStatus: _paymentStatus,
-        supplierId: _paymentStatus == 'debt' ? _supplier?.id : null,
-      );
-
-      // …filled gallon containers (if swapping empties) via GallonService.
-      for (final l in _cart) {
-        if (l.product.isGallon && l.swapEmpty) {
-          await gallon.recordRestockExchange(qty: l.qty);
-        }
-      }
+      // Water + gallon restock written ATOMICALLY in one transaction.
+      await ref.read(purchaseServiceProvider).recordPurchase(
+            lines: [
+              for (final l in _cart)
+                PurchaseLine(
+                  productId: l.product.id,
+                  qtyBase: l.qty,
+                  price: l.price,
+                  swapEmpty: l.product.isGallon && l.swapEmpty,
+                ),
+            ],
+            paymentStatus: _paymentStatus,
+            supplierId: _paymentStatus == 'debt' ? _supplier?.id : null,
+          );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Kulakan tersimpan — ${rupiah.format(_total)}')));
         Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

@@ -30,9 +30,14 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
   - stok produk = `SUM(StockMovements.qtyBase)`
   - saldo kas = `SUM(in) - SUM(out)` (`CashEntries`)
   - saldo galon = `SUM(dFull/dEmpty/dDeposit)` (`GallonLedger`)
-- **Tulis transaksi secara atomik** dalam satu `db.transaction(...)`.
-  Lihat `SalesService.recordSale` sebagai pola.
-- **Clean architecture** ringan: UI → service (domain) → Drift (data).
+- **Tulis transaksi secara atomik** dalam satu `db.transaction(...)`. Satu
+  penjualan = air + wadah galon + kas, SEMUA di satu transaksi yang
+  diorkestrasi `SalesService.recordSale` (inject `GallonService`); kulakan
+  serupa via `PurchaseService`. UI TIDAK mengorkestrasi multi-service. Saldo
+  turunan pakai SQL `SUM()` (bukan fold di Dart) + index di kolom filter panas.
+- **Clean architecture** ringan: UI → service (domain) → Drift (data). UI tak
+  pernah sentuh DB langsung (mis. tambah pelanggan/supplier lewat
+  `PartyService`). Provider/DI di `lib/providers.dart` (`main.dart` re-export).
 
 ## Aturan domain paling penting: galon = DUA barang
 

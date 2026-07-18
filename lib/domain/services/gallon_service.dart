@@ -2,6 +2,12 @@ import 'package:drift/drift.dart';
 
 import '../../data/database/database.dart';
 
+/// How a gallon line is sold. Domain-level (mapped from the UI at the POS).
+///   none        = not a gallon line
+///   exchange    = customer brings an empty (container swap, no deposit)
+///   newCustomer = new container leaves on deposit (liability)
+enum GallonSaleMode { none, exchange, newCustomer }
+
 /// Handles the gallon CONTAINER (not the water).
 /// Water/revenue is still recorded via SalesService/PurchaseService.
 /// Here we only move containers + deposit money.

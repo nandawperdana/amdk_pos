@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../data/database/database.dart';
+import '../domain/services/gallon_service.dart';
 import '../domain/services/sales_service.dart';
 import '../main.dart';
 import 'cashier_closing_screen.dart';
 import 'credit_screen.dart';
 import 'master_product_screen.dart';
+import 'owner_screen.dart' show SyncButton;
 import 'party_picker.dart';
 import 'purchase_screen.dart';
 import 'stock_take_screen.dart';
@@ -24,10 +26,6 @@ final activeProductsProvider = StreamProvider<List<Product>>((ref) {
       .watch();
 });
 
-/// Gallon selling mode: customer exchanges an empty, or a new customer pays a
-/// container deposit.
-enum GallonMode { exchange, newCustomer }
-
 /// Payment options: stored value + Indonesian display label.
 const _paymentOptions = [
   (value: 'cash', label: 'Tunai'),
@@ -38,14 +36,17 @@ const _paymentOptions = [
 class CartLine {
   final Product product;
   int qty;
-  final GallonMode? gallonMode; // null for non-gallon
+  final GallonSaleMode gallonMode; // none for non-gallon
   final double deposit; // per gallon, only for newCustomer mode
 
-  CartLine(this.product, {this.qty = 1, this.gallonMode, this.deposit = 0});
+  CartLine(this.product,
+      {this.qty = 1,
+      this.gallonMode = GallonSaleMode.none,
+      this.deposit = 0});
 
   double get subtotal => product.sellPrice * qty;
   double get depositTotal =>
-      gallonMode == GallonMode.newCustomer ? deposit * qty : 0;
+      gallonMode == GallonSaleMode.newCustomer ? deposit * qty : 0;
 }
 
 class PosScreen extends ConsumerStatefulWidget {
@@ -73,7 +74,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       setState(() => _cart.add(line));
     } else {
       // Same product → bump qty, don't create a new line.
-      final existing = _cart.where((l) => l.product.id == p.id && l.gallonMode == null);
+      final existing = _cart.where(
+          (l) => l.product.id == p.id && l.gallonMode == GallonSaleMode.none);
       setState(() {
         if (existing.isNotEmpty) {
           existing.first.qty++;
@@ -103,7 +105,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   icon: const Icon(Icons.swap_horiz),
                   label: const Text('TUKAR — pelanggan bawa galon kosong'),
                   onPressed: () => Navigator.pop(
-                      ctx, CartLine(p, gallonMode: GallonMode.exchange)),
+                      ctx, CartLine(p, gallonMode: GallonSaleMode.exchange)),
                 ),
               ),
               const SizedBox(height: 8),
@@ -116,7 +118,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   onPressed: () => Navigator.pop(
                       ctx,
                       CartLine(p,
-                          gallonMode: GallonMode.newCustomer,
+                          gallonMode: GallonSaleMode.newCustomer,
                           deposit: p.depositPrice)),
                 ),
               ),
@@ -187,7 +189,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     setState(() => _saving = true);
     try {
       final sales = ref.read(salesServiceProvider);
-      final gallon = ref.read(gallonServiceProvider);
       // 'cash' → cash account; 'qris' → qris account; 'transfer' → bank account.
       final account = switch (method) {
         'qris' => 'qris',
@@ -195,36 +196,24 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         _ => 'cash',
       };
 
-      // Water (all lines) via SalesService…
-      final saleId = await sales.recordSale(
+      // Water + gallon container written ATOMICALLY in one transaction.
+      // customerId flows through so the deposit liability is attributable.
+      await sales.recordSale(
         lines: [
           for (final l in _cart)
             SaleLine(
-                productId: l.product.id,
-                qtyBase: l.qty,
-                price: l.product.sellPrice),
+              productId: l.product.id,
+              qtyBase: l.qty,
+              price: l.product.sellPrice,
+              gallonMode: l.gallonMode,
+              deposit: l.deposit,
+            ),
         ],
         paymentMethod: method == 'credit' ? 'cash' : method,
         paymentStatus: method == 'credit' ? 'receivable' : 'paid',
         customerId: customer?.id,
         account: account,
       );
-
-      // …gallon containers via GallonService (two goods, two ledgers).
-      for (final l in _cart) {
-        switch (l.gallonMode) {
-          case GallonMode.exchange:
-            await gallon.recordExchange(qty: l.qty, saleId: saleId);
-          case GallonMode.newCustomer:
-            await gallon.recordNewGallonSale(
-                qty: l.qty,
-                depositPerGallon: l.deposit,
-                saleId: saleId,
-                account: account);
-          case null:
-            break;
-        }
-      }
 
       if (mounted) {
         final msg = method == 'credit'
@@ -235,8 +224,90 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             .showSnackBar(SnackBar(content: Text(msg)));
         setState(_cart.clear);
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e')));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Deposit return (customer brings a container back, gets the deposit)
+  // ---------------------------------------------------------------------
+
+  Future<void> _returnDeposit() async {
+    final gallons = (ref.read(activeProductsProvider).valueOrNull ?? [])
+        .where((p) => p.isGallon)
+        .toList();
+    if (gallons.isEmpty) return;
+
+    final customer = await pickParty(context, ref, isCustomer: true);
+    if (customer == null || !mounted) return;
+
+    var product = gallons.first;
+    final qtyCtrl = TextEditingController(text: '1');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text('Tarik deposit — ${customer.name}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<Product>(
+                initialValue: product,
+                decoration: const InputDecoration(labelText: 'Galon'),
+                items: [
+                  for (final g in gallons)
+                    DropdownMenuItem(
+                        value: g,
+                        child: Text(
+                            '${g.name} (${rupiah.format(g.depositPrice)})')),
+                ],
+                onChanged: (v) => setLocal(() => product = v!),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: qtyCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Jumlah galon'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Batal')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Refund')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final qty = int.tryParse(qtyCtrl.text) ?? 0;
+    if (qty <= 0) return;
+    try {
+      await ref.read(gallonServiceProvider).recordDepositReturn(
+            qty: qty,
+            depositPerGallon: product.depositPrice,
+            customerId: customer.id,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Deposit ${customer.name}: refund ${rupiah.format(product.depositPrice * qty)}')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Gagal: $e')));
+      }
     }
   }
 
@@ -252,6 +323,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       appBar: AppBar(
         title: const Text('Kasir'),
         actions: [
+          // Cashier device holds the source-of-truth data → sync lives here too.
+          if (ref.watch(syncServiceProvider).enabled) const SyncButton(),
           IconButton(
             icon: const Icon(Icons.add_shopping_cart_outlined),
             tooltip: 'Kulakan',
@@ -287,6 +360,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 child: const ListTile(
                     leading: Icon(Icons.account_balance_wallet_outlined),
                     title: Text('Piutang & Utang')),
+              ),
+              PopupMenuItem(
+                value: _returnDeposit,
+                child: const ListTile(
+                    leading: Icon(Icons.assignment_return_outlined),
+                    title: Text('Tarik deposit galon')),
               ),
               PopupMenuItem(
                 value: () => ref.read(roleProvider.notifier).select(null),
@@ -356,9 +435,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         itemBuilder: (_, i) {
           final l = _cart[i];
           final label = switch (l.gallonMode) {
-            GallonMode.exchange => ' (tukar)',
-            GallonMode.newCustomer => ' (baru+deposit)',
-            null => '',
+            GallonSaleMode.exchange => ' (tukar)',
+            GallonSaleMode.newCustomer => ' (baru+deposit)',
+            GallonSaleMode.none => '',
           };
           return ListTile(
             dense: true,

@@ -1,29 +1,31 @@
 import 'package:drift/drift.dart';
 
 import '../../data/database/database.dart';
+import 'gallon_service.dart';
 
 class PurchaseLine {
   final int productId;
   final int qtyBase; // in base units
   final double price; // buy price per base unit
+  /// Gallon only: restock filled containers by swapping empties.
+  final bool swapEmpty;
   const PurchaseLine({
     required this.productId,
     required this.qtyBase,
     required this.price,
+    this.swapEmpty = false,
   });
   double get subtotal => qtyBase * price;
 }
 
 class PurchaseService {
   final AppDatabase db;
-  PurchaseService(this.db);
+  final GallonService gallon;
+  PurchaseService(this.db, this.gallon);
 
-  /// Record one purchase/restock. Atomic: header + items + stock card (in) +
-  /// cash book (out). The inverse of SalesService.recordSale.
-  ///
-  /// To restock filled gallons with an empty swap, also call
-  /// GallonService.recordRestockExchange — water goes here, the container
-  /// goes there.
+  /// Record one purchase/restock ATOMICALLY: header + items + stock card (in)
+  /// + cash book (out) + gallon container swap — all in one transaction.
+  /// The inverse of SalesService.recordSale.
   Future<int> recordPurchase({
     required List<PurchaseLine> lines,
     int? supplierId,
@@ -64,10 +66,15 @@ class PurchaseService {
                 refId: Value(purchaseId),
               ),
             );
+
+        // Filled gallon containers via empty swap (same transaction).
+        if (l.swapEmpty) {
+          await gallon.recordRestockExchange(qty: l.qtyBase);
+        }
       }
 
       // Cash book: money OUT — only when paid. If debt, skip and record the
-      // payment later when the debt feature is added (Phase 2).
+      // payment later via CreditService.recordDebtPayment.
       if (paymentStatus == 'paid') {
         await db.into(db.cashEntries).insert(
               CashEntriesCompanion.insert(
