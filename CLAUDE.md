@@ -66,8 +66,13 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
 
 ## Keputusan yang MASIH TERBUKA
 
-- **Nilai deposit galon**: seragam (jadikan konstanta/pengaturan) atau beda per
-  merk (kolom di `Products`)? Sekarang masih parameter per transaksi.
+- (kosong untuk saat ini)
+
+## Keputusan yang sudah DITUTUP
+
+- **Nilai deposit galon**: DIPUTUS per-produk (kolom `Products.depositPrice`,
+  editable di master produk). POS pakai `p.depositPrice`. Backfill galon lama
+  ke 40000 saat migrasi v3→v4.
 
 ## Roadmap
 
