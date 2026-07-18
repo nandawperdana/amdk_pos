@@ -126,10 +126,7 @@ build --delete-conflicting-outputs`.
 
 ## Langkah berikutnya (urutan disarankan)
 
-Fase 1 selesai. Fase 2 berjalan — sisa:
-
-1. QRIS/transfer sebagai metode pelunasan piutang/utang (sekarang pelunasan
-   default akun `cash`).
+**Fase 1 & Fase 2 TUNTAS.**
 
 SELESAI di Fase 2:
 - Piutang/utang (tab per pihak, pelunasan append-only).
@@ -142,6 +139,12 @@ SELESAI di Fase 2:
   (start, end)`, `dailySummary/dailyReport` jadi wrapper single-day.
   `lib/ui/daily_report_screen.dart` (layar "Laporan"): preset Hari ini/
   Minggu ini/Bulan ini + date-range picker custom.
+- QRIS/transfer sebagai metode pelunasan piutang/utang — dialog di
+  `credit_screen.dart` punya pilihan Tunai/QRIS/Transfer, pakai param
+  `account` yang sudah ada di `CreditService`.
+
+Lanjut ke Fase 3 (antar galon, langganan galon bulanan, multi-toko,
+analitik) — lihat bagian Roadmap di atas untuk detail.
 
 DITUNDA (belum ada kebutuhan):
 - Harga reseller — belum berencana punya reseller. Tabel `Customers.type`
