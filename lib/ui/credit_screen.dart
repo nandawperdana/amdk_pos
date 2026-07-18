@@ -10,6 +10,13 @@ final _receivablesProvider = FutureProvider.autoDispose(
 final _payablesProvider = FutureProvider.autoDispose(
     (ref) => ref.watch(creditServiceProvider).suppliersWithDebt());
 
+/// Settlement account options: stored value + Indonesian display label.
+const _accountOptions = [
+  (value: 'cash', label: 'Tunai'),
+  (value: 'qris', label: 'QRIS'),
+  (value: 'transfer', label: 'Transfer'),
+];
+
 class CreditScreen extends ConsumerWidget {
   const CreditScreen({super.key});
 
@@ -106,49 +113,68 @@ class _PartyList extends ConsumerWidget {
       BuildContext context, WidgetRef ref, PartyBalance p) async {
     final controller =
         TextEditingController(text: p.balance.toStringAsFixed(0));
-    final amount = await showDialog<double>(
+    String account = 'cash';
+    final result = await showDialog<({double amount, String account})>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(isReceivable
-            ? 'Terima bayaran — ${p.name}'
-            : 'Bayar utang — ${p.name}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Sisa ${rupiah.format(p.balance)}'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                  prefixText: 'Rp ', labelText: 'Jumlah bayar'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text(isReceivable
+              ? 'Terima bayaran — ${p.name}'
+              : 'Bayar utang — ${p.name}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Sisa ${rupiah.format(p.balance)}'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    prefixText: 'Rp ', labelText: 'Jumlah bayar'),
+              ),
+              const SizedBox(height: 12),
+              SegmentedButton<String>(
+                segments: [
+                  for (final o in _accountOptions)
+                    ButtonSegment(value: o.value, label: Text(o.label)),
+                ],
+                selected: {account},
+                onSelectionChanged: (s) => setLocal(() => account = s.first),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Batal')),
+            FilledButton(
+              onPressed: () {
+                final amount = double.tryParse(controller.text);
+                if (amount == null || amount <= 0) return;
+                Navigator.pop(ctx, (amount: amount, account: account));
+              },
+              child: const Text('Simpan'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(ctx, double.tryParse(controller.text)),
-            child: const Text('Simpan'),
-          ),
-        ],
       ),
     );
-    if (amount == null || amount <= 0) return;
+    if (result == null) return;
 
     final credit = ref.read(creditServiceProvider);
     if (isReceivable) {
-      await credit.recordReceivablePayment(customerId: p.id, amount: amount);
+      await credit.recordReceivablePayment(
+          customerId: p.id, amount: result.amount, account: result.account);
     } else {
-      await credit.recordDebtPayment(supplierId: p.id, amount: amount);
+      await credit.recordDebtPayment(
+          supplierId: p.id, amount: result.amount, account: result.account);
     }
     ref.invalidate(provider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${p.name}: bayar ${rupiah.format(amount)} tercatat')));
+          content: Text(
+              '${p.name}: bayar ${rupiah.format(result.amount)} tercatat')));
     }
   }
 }
