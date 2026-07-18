@@ -13,10 +13,6 @@ import 'party_picker.dart';
 import 'purchase_screen.dart';
 import 'stock_take_screen.dart';
 
-/// Default gallon deposit. Still an open decision (uniform vs per brand) —
-/// a constant for now, editable by the cashier per transaction.
-const double defaultGallonDeposit = 40000;
-
 final rupiah = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
 /// Active products, live from the DB.
@@ -116,12 +112,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.add_circle_outline),
                   label: Text(
-                      'BARU — + deposit ${rupiah.format(defaultGallonDeposit)}'),
+                      'BARU — + deposit ${rupiah.format(p.depositPrice)}'),
                   onPressed: () => Navigator.pop(
                       ctx,
                       CartLine(p,
                           gallonMode: GallonMode.newCustomer,
-                          deposit: defaultGallonDeposit)),
+                          deposit: p.depositPrice)),
                 ),
               ),
             ],

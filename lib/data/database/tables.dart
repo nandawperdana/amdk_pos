@@ -27,6 +27,10 @@ class Products extends Table {
   /// flows through GallonLedger.
   BoolColumn get isGallon => boolean().withDefault(const Constant(false))();
 
+  /// Container deposit per unit, set per gallon product (0 for non-gallon).
+  /// Used at POS when selling a gallon to a new customer.
+  RealColumn get depositPrice => real().withDefault(const Constant(0))();
+
   BoolColumn get active => boolean().withDefault(const Constant(true))();
 }
 

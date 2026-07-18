@@ -85,6 +85,14 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('CHECK ("is_gallon" IN (0, 1))'),
       defaultValue: const Constant(false));
+  static const VerificationMeta _depositPriceMeta =
+      const VerificationMeta('depositPrice');
+  @override
+  late final GeneratedColumn<double> depositPrice = GeneratedColumn<double>(
+      'deposit_price', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   static const VerificationMeta _activeMeta = const VerificationMeta('active');
   @override
   late final GeneratedColumn<bool> active = GeneratedColumn<bool>(
@@ -106,6 +114,7 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         buyPrice,
         sellPrice,
         isGallon,
+        depositPrice,
         active
       ];
   @override
@@ -159,6 +168,12 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       context.handle(_isGallonMeta,
           isGallon.isAcceptableOrUnknown(data['is_gallon']!, _isGallonMeta));
     }
+    if (data.containsKey('deposit_price')) {
+      context.handle(
+          _depositPriceMeta,
+          depositPrice.isAcceptableOrUnknown(
+              data['deposit_price']!, _depositPriceMeta));
+    }
     if (data.containsKey('active')) {
       context.handle(_activeMeta,
           active.isAcceptableOrUnknown(data['active']!, _activeMeta));
@@ -192,6 +207,8 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
           .read(DriftSqlType.double, data['${effectivePrefix}sell_price'])!,
       isGallon: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}is_gallon'])!,
+      depositPrice: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}deposit_price'])!,
       active: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}active'])!,
     );
@@ -224,6 +241,10 @@ class Product extends DataClass implements Insertable<Product> {
   /// The water still flows through normal product stock; the container
   /// flows through GallonLedger.
   final bool isGallon;
+
+  /// Container deposit per unit, set per gallon product (0 for non-gallon).
+  /// Used at POS when selling a gallon to a new customer.
+  final double depositPrice;
   final bool active;
   const Product(
       {required this.id,
@@ -236,6 +257,7 @@ class Product extends DataClass implements Insertable<Product> {
       required this.buyPrice,
       required this.sellPrice,
       required this.isGallon,
+      required this.depositPrice,
       required this.active});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -252,6 +274,7 @@ class Product extends DataClass implements Insertable<Product> {
     map['buy_price'] = Variable<double>(buyPrice);
     map['sell_price'] = Variable<double>(sellPrice);
     map['is_gallon'] = Variable<bool>(isGallon);
+    map['deposit_price'] = Variable<double>(depositPrice);
     map['active'] = Variable<bool>(active);
     return map;
   }
@@ -270,6 +293,7 @@ class Product extends DataClass implements Insertable<Product> {
       buyPrice: Value(buyPrice),
       sellPrice: Value(sellPrice),
       isGallon: Value(isGallon),
+      depositPrice: Value(depositPrice),
       active: Value(active),
     );
   }
@@ -288,6 +312,7 @@ class Product extends DataClass implements Insertable<Product> {
       buyPrice: serializer.fromJson<double>(json['buyPrice']),
       sellPrice: serializer.fromJson<double>(json['sellPrice']),
       isGallon: serializer.fromJson<bool>(json['isGallon']),
+      depositPrice: serializer.fromJson<double>(json['depositPrice']),
       active: serializer.fromJson<bool>(json['active']),
     );
   }
@@ -305,6 +330,7 @@ class Product extends DataClass implements Insertable<Product> {
       'buyPrice': serializer.toJson<double>(buyPrice),
       'sellPrice': serializer.toJson<double>(sellPrice),
       'isGallon': serializer.toJson<bool>(isGallon),
+      'depositPrice': serializer.toJson<double>(depositPrice),
       'active': serializer.toJson<bool>(active),
     };
   }
@@ -320,6 +346,7 @@ class Product extends DataClass implements Insertable<Product> {
           double? buyPrice,
           double? sellPrice,
           bool? isGallon,
+          double? depositPrice,
           bool? active}) =>
       Product(
         id: id ?? this.id,
@@ -332,6 +359,7 @@ class Product extends DataClass implements Insertable<Product> {
         buyPrice: buyPrice ?? this.buyPrice,
         sellPrice: sellPrice ?? this.sellPrice,
         isGallon: isGallon ?? this.isGallon,
+        depositPrice: depositPrice ?? this.depositPrice,
         active: active ?? this.active,
       );
   Product copyWithCompanion(ProductsCompanion data) {
@@ -346,6 +374,9 @@ class Product extends DataClass implements Insertable<Product> {
       buyPrice: data.buyPrice.present ? data.buyPrice.value : this.buyPrice,
       sellPrice: data.sellPrice.present ? data.sellPrice.value : this.sellPrice,
       isGallon: data.isGallon.present ? data.isGallon.value : this.isGallon,
+      depositPrice: data.depositPrice.present
+          ? data.depositPrice.value
+          : this.depositPrice,
       active: data.active.present ? data.active.value : this.active,
     );
   }
@@ -363,6 +394,7 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('buyPrice: $buyPrice, ')
           ..write('sellPrice: $sellPrice, ')
           ..write('isGallon: $isGallon, ')
+          ..write('depositPrice: $depositPrice, ')
           ..write('active: $active')
           ..write(')'))
         .toString();
@@ -370,7 +402,7 @@ class Product extends DataClass implements Insertable<Product> {
 
   @override
   int get hashCode => Object.hash(id, name, brand, category, baseUnit, packUnit,
-      packSize, buyPrice, sellPrice, isGallon, active);
+      packSize, buyPrice, sellPrice, isGallon, depositPrice, active);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -385,6 +417,7 @@ class Product extends DataClass implements Insertable<Product> {
           other.buyPrice == this.buyPrice &&
           other.sellPrice == this.sellPrice &&
           other.isGallon == this.isGallon &&
+          other.depositPrice == this.depositPrice &&
           other.active == this.active);
 }
 
@@ -399,6 +432,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<double> buyPrice;
   final Value<double> sellPrice;
   final Value<bool> isGallon;
+  final Value<double> depositPrice;
   final Value<bool> active;
   const ProductsCompanion({
     this.id = const Value.absent(),
@@ -411,6 +445,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.buyPrice = const Value.absent(),
     this.sellPrice = const Value.absent(),
     this.isGallon = const Value.absent(),
+    this.depositPrice = const Value.absent(),
     this.active = const Value.absent(),
   });
   ProductsCompanion.insert({
@@ -424,6 +459,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.buyPrice = const Value.absent(),
     this.sellPrice = const Value.absent(),
     this.isGallon = const Value.absent(),
+    this.depositPrice = const Value.absent(),
     this.active = const Value.absent(),
   }) : name = Value(name);
   static Insertable<Product> custom({
@@ -437,6 +473,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<double>? buyPrice,
     Expression<double>? sellPrice,
     Expression<bool>? isGallon,
+    Expression<double>? depositPrice,
     Expression<bool>? active,
   }) {
     return RawValuesInsertable({
@@ -450,6 +487,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (buyPrice != null) 'buy_price': buyPrice,
       if (sellPrice != null) 'sell_price': sellPrice,
       if (isGallon != null) 'is_gallon': isGallon,
+      if (depositPrice != null) 'deposit_price': depositPrice,
       if (active != null) 'active': active,
     });
   }
@@ -465,6 +503,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       Value<double>? buyPrice,
       Value<double>? sellPrice,
       Value<bool>? isGallon,
+      Value<double>? depositPrice,
       Value<bool>? active}) {
     return ProductsCompanion(
       id: id ?? this.id,
@@ -477,6 +516,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       buyPrice: buyPrice ?? this.buyPrice,
       sellPrice: sellPrice ?? this.sellPrice,
       isGallon: isGallon ?? this.isGallon,
+      depositPrice: depositPrice ?? this.depositPrice,
       active: active ?? this.active,
     );
   }
@@ -514,6 +554,9 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (isGallon.present) {
       map['is_gallon'] = Variable<bool>(isGallon.value);
     }
+    if (depositPrice.present) {
+      map['deposit_price'] = Variable<double>(depositPrice.value);
+    }
     if (active.present) {
       map['active'] = Variable<bool>(active.value);
     }
@@ -533,6 +576,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('buyPrice: $buyPrice, ')
           ..write('sellPrice: $sellPrice, ')
           ..write('isGallon: $isGallon, ')
+          ..write('depositPrice: $depositPrice, ')
           ..write('active: $active')
           ..write(')'))
         .toString();
@@ -4421,6 +4465,7 @@ typedef $$ProductsTableCreateCompanionBuilder = ProductsCompanion Function({
   Value<double> buyPrice,
   Value<double> sellPrice,
   Value<bool> isGallon,
+  Value<double> depositPrice,
   Value<bool> active,
 });
 typedef $$ProductsTableUpdateCompanionBuilder = ProductsCompanion Function({
@@ -4434,6 +4479,7 @@ typedef $$ProductsTableUpdateCompanionBuilder = ProductsCompanion Function({
   Value<double> buyPrice,
   Value<double> sellPrice,
   Value<bool> isGallon,
+  Value<double> depositPrice,
   Value<bool> active,
 });
 
@@ -4475,6 +4521,9 @@ class $$ProductsTableFilterComposer
 
   ColumnFilters<bool> get isGallon => $composableBuilder(
       column: $table.isGallon, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get depositPrice => $composableBuilder(
+      column: $table.depositPrice, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<bool> get active => $composableBuilder(
       column: $table.active, builder: (column) => ColumnFilters(column));
@@ -4519,6 +4568,10 @@ class $$ProductsTableOrderingComposer
   ColumnOrderings<bool> get isGallon => $composableBuilder(
       column: $table.isGallon, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<double> get depositPrice => $composableBuilder(
+      column: $table.depositPrice,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<bool> get active => $composableBuilder(
       column: $table.active, builder: (column) => ColumnOrderings(column));
 }
@@ -4562,6 +4615,9 @@ class $$ProductsTableAnnotationComposer
   GeneratedColumn<bool> get isGallon =>
       $composableBuilder(column: $table.isGallon, builder: (column) => column);
 
+  GeneratedColumn<double> get depositPrice => $composableBuilder(
+      column: $table.depositPrice, builder: (column) => column);
+
   GeneratedColumn<bool> get active =>
       $composableBuilder(column: $table.active, builder: (column) => column);
 }
@@ -4599,6 +4655,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             Value<double> buyPrice = const Value.absent(),
             Value<double> sellPrice = const Value.absent(),
             Value<bool> isGallon = const Value.absent(),
+            Value<double> depositPrice = const Value.absent(),
             Value<bool> active = const Value.absent(),
           }) =>
               ProductsCompanion(
@@ -4612,6 +4669,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             buyPrice: buyPrice,
             sellPrice: sellPrice,
             isGallon: isGallon,
+            depositPrice: depositPrice,
             active: active,
           ),
           createCompanionCallback: ({
@@ -4625,6 +4683,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             Value<double> buyPrice = const Value.absent(),
             Value<double> sellPrice = const Value.absent(),
             Value<bool> isGallon = const Value.absent(),
+            Value<double> depositPrice = const Value.absent(),
             Value<bool> active = const Value.absent(),
           }) =>
               ProductsCompanion.insert(
@@ -4638,6 +4697,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             buyPrice: buyPrice,
             sellPrice: sellPrice,
             isGallon: isGallon,
+            depositPrice: depositPrice,
             active: active,
           ),
           withReferenceMapper: (p0) => p0

@@ -26,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'amdk_pos'));
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -37,6 +37,12 @@ class AppDatabase extends _$AppDatabase {
         onUpgrade: (m, from, to) async {
           if (from < 2) await m.createTable(cashierClosings);
           if (from < 3) await m.createTable(syncCursors);
+          if (from < 4) {
+            await m.addColumn(products, products.depositPrice);
+            // Backfill existing gallon products with the old default deposit.
+            await (update(products)..where((p) => p.isGallon.equals(true)))
+                .write(const ProductsCompanion(depositPrice: Value(40000)));
+          }
         },
       );
 
@@ -53,6 +59,7 @@ class AppDatabase extends _$AppDatabase {
       required double buy,
       required double sell,
       bool isGallon = false,
+      double deposit = 0,
     }) =>
         ProductsCompanion.insert(
           name: name,
@@ -63,16 +70,18 @@ class AppDatabase extends _$AppDatabase {
           buyPrice: Value(buy),
           sellPrice: Value(sell),
           isGallon: Value(isGallon),
+          depositPrice: Value(deposit),
         );
 
     await batch((b) => b.insertAll(products, [
           // Gallons (water; the container goes through GallonLedger)
           p(name: 'Galon Aqua 19L', brand: 'Aqua', category: 'gallon',
-              buy: 17000, sell: 20000, isGallon: true),
+              buy: 17000, sell: 20000, isGallon: true, deposit: 40000),
           p(name: 'Galon Le Minerale 15L', brand: 'Le Minerale',
-              category: 'gallon', buy: 15000, sell: 18000, isGallon: true),
+              category: 'gallon', buy: 15000, sell: 18000, isGallon: true,
+              deposit: 40000),
           p(name: 'Galon Cleo 19L', brand: 'Cleo', category: 'gallon',
-              buy: 16000, sell: 19000, isGallon: true),
+              buy: 16000, sell: 19000, isGallon: true, deposit: 40000),
           // Cups (sold per pcs, bought per box)
           p(name: 'Aqua Gelas 240ml', brand: 'Aqua', category: 'cup',
               packUnit: 'dus', packSize: 48, buy: 550, sell: 1000),

@@ -22,7 +22,7 @@ create table if not exists products (
   name text, brand text, category text, base_unit text,
   pack_unit text, pack_size bigint,
   buy_price double precision, sell_price double precision,
-  is_gallon smallint, active smallint,
+  is_gallon smallint, deposit_price double precision, active smallint,
   primary key (device_id, id)
 );
 

@@ -23,6 +23,11 @@ void main() {
     expect(products, isNotEmpty);
     expect(products.where((p) => p.isGallon), isNotEmpty);
     expect(products.every((p) => p.sellPrice > p.buyPrice), isTrue);
+    // Gallons carry a per-product deposit; non-gallons don't.
+    expect(products.where((p) => p.isGallon).every((p) => p.depositPrice > 0),
+        isTrue);
+    expect(products.where((p) => !p.isGallon).every((p) => p.depositPrice == 0),
+        isTrue);
   });
 
   test('recordSale: stock out, cash in, revenue correct', () async {

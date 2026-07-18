@@ -97,6 +97,7 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
   late final TextEditingController _sell;
   late final TextEditingController _packUnit;
   late final TextEditingController _packSize;
+  late final TextEditingController _deposit;
   late String _category;
 
   Product? get _p => widget.product;
@@ -110,12 +111,13 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
     _sell = TextEditingController(text: _p?.sellPrice.toStringAsFixed(0) ?? '');
     _packUnit = TextEditingController(text: _p?.packUnit ?? '');
     _packSize = TextEditingController(text: '${_p?.packSize ?? 1}');
+    _deposit = TextEditingController(text: _p?.depositPrice.toStringAsFixed(0) ?? '');
     _category = _p?.category ?? 'other';
   }
 
   @override
   void dispose() {
-    for (final c in [_name, _brand, _buy, _sell, _packUnit, _packSize]) {
+    for (final c in [_name, _brand, _buy, _sell, _packUnit, _packSize, _deposit]) {
       c.dispose();
     }
     super.dispose();
@@ -133,6 +135,9 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
       isGallon: Value(_category == 'gallon'),
       buyPrice: Value(double.tryParse(_buy.text) ?? 0),
       sellPrice: Value(double.tryParse(_sell.text) ?? 0),
+      // Deposit only applies to gallons; 0 otherwise.
+      depositPrice: Value(
+          _category == 'gallon' ? (double.tryParse(_deposit.text) ?? 0) : 0),
       packUnit: Value(packUnit.isEmpty ? null : packUnit),
       packSize: Value(int.tryParse(_packSize.text) ?? 1),
     );
@@ -172,7 +177,7 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
               ],
               onChanged: (v) => setState(() => _category = v!),
             ),
-            if (_category == 'gallon')
+            if (_category == 'gallon') ...[
               const Padding(
                 padding: EdgeInsets.only(top: 4),
                 child: Text(
@@ -180,6 +185,14 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
                     'beredar), terpisah dari stok air.',
                     style: TextStyle(fontSize: 12)),
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _deposit,
+                decoration: const InputDecoration(
+                    labelText: 'Deposit wadah (per galon)', prefixText: 'Rp '),
+                keyboardType: TextInputType.number,
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [
