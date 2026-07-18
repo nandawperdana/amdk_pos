@@ -128,14 +128,17 @@ build --delete-conflicting-outputs`.
 
 Fase 1 selesai. Fase 2 berjalan — sisa:
 
-1. Sinkronisasi cloud (Supabase) — layer sudah dibangun (`SyncService`,
-   cursor-based, gated di kredensial). Sisanya: owner buat project Supabase
-   + jalankan `doc/supabase_setup.sql`, lalu live round-trip diuji.
-2. Laba-rugi & arus kas periode (laporan lintas hari/bulan).
-3. QRIS/transfer sebagai metode pelunasan piutang/utang (sekarang pelunasan
+1. Laba-rugi & arus kas periode (laporan lintas hari/bulan).
+2. QRIS/transfer sebagai metode pelunasan piutang/utang (sekarang pelunasan
    default akun `cash`).
 
-SELESAI di Fase 2: piutang/utang (tab per pihak, pelunasan append-only).
+SELESAI di Fase 2:
+- Piutang/utang (tab per pihak, pelunasan append-only).
+- Sinkronisasi cloud — project Supabase aktif, `doc/supabase_setup.sql`
+  dijalankan, live round-trip terverifikasi (push idempotent, master
+  full-merge vs ledger cursor-based, nol duplikat). Jalankan dengan
+  `fvm flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`
+  (nilai kredensial di catatan pribadi owner, bukan di repo).
 
 DITUNDA (belum ada kebutuhan):
 - Harga reseller — belum berencana punya reseller. Tabel `Customers.type`
