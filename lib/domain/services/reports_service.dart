@@ -59,13 +59,23 @@ class ReportsService {
   final AppDatabase db;
   ReportsService(this.db);
 
-  /// Daily summary. COGS = product buyPrice × qty sold.
+  /// Single-day summary — convenience wrapper over [periodSummary].
+  Future<DailySummary> dailySummary(DateTime day) {
+    final start = DateTime(day.year, day.month, day.day);
+    return periodSummary(start, start.add(const Duration(days: 1)));
+  }
+
+  /// Single-day report — convenience wrapper over [periodReport].
+  Future<DailyReport> dailyReport(DateTime day) {
+    final start = DateTime(day.year, day.month, day.day);
+    return periodReport(start, start.add(const Duration(days: 1)));
+  }
+
+  /// Summary over [start, end) — any range, a day or a month.
+  /// COGS = product buyPrice × qty sold.
   /// Note: the per-product lookup in a loop (N+1) is left simple for the
   /// scaffold — optimize with a JOIN once transaction volume grows.
-  Future<DailySummary> dailySummary(DateTime day) async {
-    final start = DateTime(day.year, day.month, day.day);
-    final end = start.add(const Duration(days: 1));
-
+  Future<DailySummary> periodSummary(DateTime start, DateTime end) async {
     final sales = await (db.select(db.sales)
           ..where((s) =>
               s.date.isBiggerOrEqualValue(start) &
@@ -109,13 +119,10 @@ class ReportsService {
     );
   }
 
-  /// Full daily report with per-product & per-cash-category breakdown.
-  /// The N+1 product lookup is left simple (same as dailySummary) — optimize
-  /// with a JOIN once volume grows.
-  Future<DailyReport> dailyReport(DateTime day) async {
-    final start = DateTime(day.year, day.month, day.day);
-    final end = start.add(const Duration(days: 1));
-
+  /// Full report over [start, end) with per-product & per-cash-category
+  /// breakdown. The N+1 product lookup is left simple (same as
+  /// periodSummary) — optimize with a JOIN once volume grows.
+  Future<DailyReport> periodReport(DateTime start, DateTime end) async {
     final sales = await (db.select(db.sales)
           ..where((s) =>
               s.date.isBiggerOrEqualValue(start) &

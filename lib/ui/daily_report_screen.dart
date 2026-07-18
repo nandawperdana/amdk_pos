@@ -6,17 +6,34 @@ import '../domain/services/reports_service.dart';
 import '../main.dart';
 import 'pos_screen.dart' show rupiah;
 
-final _selectedDayProvider = StateProvider<DateTime>((ref) {
-  final now = DateTime.now();
-  return DateTime(now.year, now.month, now.day);
-});
+/// A reporting period: [start, endInclusive] — both normalized to midnight.
+/// A single day has start == endInclusive.
+class ReportRange {
+  final DateTime start;
+  final DateTime endInclusive;
+  const ReportRange(this.start, this.endInclusive);
+
+  factory ReportRange.singleDay(DateTime day) {
+    final d = DateTime(day.year, day.month, day.day);
+    return ReportRange(d, d);
+  }
+
+  DateTime get endExclusive => endInclusive.add(const Duration(days: 1));
+  bool get isSingleDay => start == endInclusive;
+}
+
+final _selectedRangeProvider =
+    StateProvider<ReportRange>((ref) => ReportRange.singleDay(DateTime.now()));
 
 final _reportProvider = FutureProvider.autoDispose<DailyReport>((ref) {
-  final day = ref.watch(_selectedDayProvider);
-  return ref.watch(reportsServiceProvider).dailyReport(day);
+  final range = ref.watch(_selectedRangeProvider);
+  return ref
+      .watch(reportsServiceProvider)
+      .periodReport(range.start, range.endExclusive);
 });
 
-final _dateFormat = DateFormat('EEEE, d MMMM yyyy', 'id_ID');
+final _dayFormat = DateFormat('EEEE, d MMMM yyyy', 'id_ID');
+final _shortDayFormat = DateFormat('d MMM yyyy', 'id_ID');
 
 /// Cash category value → friendly Indonesian label for the owner.
 const _categoryLabel = {
@@ -34,87 +51,142 @@ const _categoryLabel = {
 class DailyReportScreen extends ConsumerWidget {
   const DailyReportScreen({super.key});
 
-  Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
-    final current = ref.read(_selectedDayProvider);
-    final picked = await showDatePicker(
+  static DateTime _mondayOf(DateTime day) =>
+      DateTime(day.year, day.month, day.day - (day.weekday - 1));
+
+  void _pickPreset(WidgetRef ref, String preset) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final range = switch (preset) {
+      'today' => ReportRange.singleDay(today),
+      'week' => ReportRange(_mondayOf(today), today),
+      'month' => ReportRange(DateTime(today.year, today.month, 1), today),
+      _ => ReportRange.singleDay(today),
+    };
+    ref.read(_selectedRangeProvider.notifier).state = range;
+  }
+
+  Future<void> _pickCustomRange(BuildContext context, WidgetRef ref) async {
+    final current = ref.read(_selectedRangeProvider);
+    final picked = await showDateRangePicker(
       context: context,
-      initialDate: current,
+      initialDateRange:
+          DateTimeRange(start: current.start, end: current.endInclusive),
       firstDate: DateTime(2024),
       lastDate: DateTime.now(),
       locale: const Locale('id', 'ID'),
     );
     if (picked != null) {
-      ref.read(_selectedDayProvider.notifier).state =
-          DateTime(picked.year, picked.month, picked.day);
+      ref.read(_selectedRangeProvider.notifier).state = ReportRange(
+        DateTime(picked.start.year, picked.start.month, picked.start.day),
+        DateTime(picked.end.year, picked.end.month, picked.end.day),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final day = ref.watch(_selectedDayProvider);
+    final range = ref.watch(_selectedRangeProvider);
     final report = ref.watch(_reportProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Laporan Harian'),
+        title: const Text('Laporan'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.calendar_today),
-            tooltip: 'Pilih tanggal',
-            onPressed: () => _pickDate(context, ref),
+            icon: const Icon(Icons.date_range),
+            tooltip: 'Pilih rentang tanggal',
+            onPressed: () => _pickCustomRange(context, ref),
           ),
         ],
       ),
-      body: report.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Gagal memuat: $e')),
-        data: (r) => ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Center(
-              child: Text(_dateFormat.format(day),
-                  style: Theme.of(context).textTheme.titleMedium),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Hari ini'),
+                  selected: false,
+                  onSelected: (_) => _pickPreset(ref, 'today'),
+                ),
+                ChoiceChip(
+                  label: const Text('Minggu ini'),
+                  selected: false,
+                  onSelected: (_) => _pickPreset(ref, 'week'),
+                ),
+                ChoiceChip(
+                  label: const Text('Bulan ini'),
+                  selected: false,
+                  onSelected: (_) => _pickPreset(ref, 'month'),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            _summaryCards(context, r.summary),
-            const SizedBox(height: 16),
-            _section(context, 'Penjualan per produk'),
-            if (r.byProduct.isEmpty)
-              const _EmptyRow('Belum ada penjualan hari ini')
-            else
-              ...r.byProduct.map((p) => Card(
-                    child: ListTile(
-                      title: Text(p.name),
-                      subtitle: Text('${p.qty} pcs · laba '
-                          '${rupiah.format(p.profit)}'),
-                      trailing: Text(rupiah.format(p.revenue),
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+          Expanded(
+            child: report.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Gagal memuat: $e')),
+              data: (r) => ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Center(
+                    child: Text(
+                      range.isSingleDay
+                          ? _dayFormat.format(range.start)
+                          : '${_shortDayFormat.format(range.start)} '
+                              '– ${_shortDayFormat.format(range.endInclusive)}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                      textAlign: TextAlign.center,
                     ),
-                  )),
-            const SizedBox(height: 16),
-            _section(context, 'Arus kas per kategori'),
-            if (r.byCategory.isEmpty)
-              const _EmptyRow('Belum ada arus kas hari ini')
-            else
-              ...r.byCategory.map((c) => Card(
-                    child: ListTile(
-                      title: Text(_categoryLabel[c.category] ?? c.category),
-                      subtitle: Text(
-                          'masuk ${rupiah.format(c.inflow)} · '
-                          'keluar ${rupiah.format(c.outflow)}'),
-                      trailing: Text(
-                        '${c.net >= 0 ? '+' : ''}${rupiah.format(c.net)}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: c.net >= 0 ? Colors.green : Colors.red,
-                        ),
-                      ),
-                    ),
-                  )),
-          ],
-        ),
+                  ),
+                  const SizedBox(height: 16),
+                  _summaryCards(context, r.summary),
+                  const SizedBox(height: 16),
+                  _section(context, 'Penjualan per produk'),
+                  if (r.byProduct.isEmpty)
+                    const _EmptyRow('Belum ada penjualan pada periode ini')
+                  else
+                    ...r.byProduct.map((p) => Card(
+                          child: ListTile(
+                            title: Text(p.name),
+                            subtitle: Text('${p.qty} pcs · laba '
+                                '${rupiah.format(p.profit)}'),
+                            trailing: Text(rupiah.format(p.revenue),
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        )),
+                  const SizedBox(height: 16),
+                  _section(context, 'Arus kas per kategori'),
+                  if (r.byCategory.isEmpty)
+                    const _EmptyRow('Belum ada arus kas pada periode ini')
+                  else
+                    ...r.byCategory.map((c) => Card(
+                          child: ListTile(
+                            title:
+                                Text(_categoryLabel[c.category] ?? c.category),
+                            subtitle: Text(
+                                'masuk ${rupiah.format(c.inflow)} · '
+                                'keluar ${rupiah.format(c.outflow)}'),
+                            trailing: Text(
+                              '${c.net >= 0 ? '+' : ''}${rupiah.format(c.net)}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: c.net >= 0 ? Colors.green : Colors.red,
+                              ),
+                            ),
+                          ),
+                        )),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

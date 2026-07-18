@@ -28,7 +28,7 @@ class OwnerScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.event_note),
-            tooltip: 'Laporan Harian',
+            tooltip: 'Laporan',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const DailyReportScreen())),
           ),

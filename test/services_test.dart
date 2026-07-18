@@ -426,6 +426,47 @@ void main() {
     expect(await db.cashBalance(), 0);
     expect((await db.gallonBalance()).depositOut, 0);
   });
+
+  test('periodReport aggregates across days; dailyReport stays single-day',
+      () async {
+    final reports = ReportsService(db);
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    // Historical row (yesterday) written directly — the service always
+    // stamps "now", so backdated data is set up straight on the ledger.
+    final ySaleId = await db.into(db.sales).insert(SalesCompanion.insert(
+        date: Value(yesterday), totalAmount: Value(p.sellPrice * 2)));
+    await db.into(db.saleItems).insert(SaleItemsCompanion.insert(
+        saleId: ySaleId,
+        productId: p.id,
+        qtyBase: 2,
+        price: p.sellPrice,
+        subtotal: p.sellPrice * 2));
+    await db.into(db.cashEntries).insert(CashEntriesCompanion.insert(
+        date: Value(yesterday),
+        direction: 'in',
+        amount: p.sellPrice * 2,
+        category: 'sale'));
+
+    // Today via the real service.
+    final sales = SalesService(db, GallonService(db));
+    await sales.recordSale(
+        lines: [SaleLine(productId: p.id, qtyBase: 3, price: p.sellPrice)]);
+
+    // dailyReport(today) only sees today's 3.
+    final onlyToday = await reports.dailyReport(today);
+    expect(onlyToday.summary.revenue, p.sellPrice * 3);
+
+    // periodReport spanning both days sees 2 + 3 = 5.
+    final period = await reports.periodReport(
+        yesterday, today.add(const Duration(days: 1)));
+    expect(period.summary.revenue, p.sellPrice * 5);
+    expect(period.byProduct.single.qty, 5);
+    expect(period.summary.cashIn, p.sellPrice * 5);
+  });
 }
 
 /// Gallon service that fails the new-sale step, to test transaction rollback.
