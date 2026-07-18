@@ -179,9 +179,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     );
     if (method == null || !mounted) return;
 
-    // Credit needs a customer.
+    // A customer is required for credit AND whenever a container leaves on
+    // deposit (newCustomer gallon), so the deposit liability is attributable.
+    final needsCustomer = method == 'credit' ||
+        _cart.any((l) => l.gallonMode == GallonSaleMode.newCustomer);
     Party? customer;
-    if (method == 'credit') {
+    if (needsCustomer) {
       customer = await pickParty(context, ref, isCustomer: true);
       if (customer == null || !mounted) return; // cancelled → abort save
     }
