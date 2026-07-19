@@ -54,7 +54,7 @@ class _StockTakeForm extends ConsumerStatefulWidget {
 
 class _StockTakeFormState extends ConsumerState<_StockTakeForm> {
   late final Map<int, TextEditingController> _stock;
-  late final TextEditingController _full, _empty, _depositOut;
+  late final TextEditingController _full, _empty;
   bool _saving = false;
 
   @override
@@ -66,7 +66,6 @@ class _StockTakeFormState extends ConsumerState<_StockTakeForm> {
     };
     _full = TextEditingController(text: '${widget.gallon.full}');
     _empty = TextEditingController(text: '${widget.gallon.empty}');
-    _depositOut = TextEditingController(text: '${widget.gallon.depositOut}');
   }
 
   @override
@@ -76,7 +75,6 @@ class _StockTakeFormState extends ConsumerState<_StockTakeForm> {
     }
     _full.dispose();
     _empty.dispose();
-    _depositOut.dispose();
     super.dispose();
   }
 
@@ -91,7 +89,6 @@ class _StockTakeFormState extends ConsumerState<_StockTakeForm> {
       await svc.adjustGallon(
         full: int.tryParse(_full.text) ?? widget.gallon.full,
         empty: int.tryParse(_empty.text) ?? widget.gallon.empty,
-        depositOut: int.tryParse(_depositOut.text) ?? widget.gallon.depositOut,
       );
       ref.invalidate(stockTakeDataProvider);
       if (mounted) {
@@ -112,7 +109,7 @@ class _StockTakeFormState extends ConsumerState<_StockTakeForm> {
           child: ListView(
             padding: const EdgeInsets.all(12),
             children: [
-              _GallonCard(full: _full, empty: _empty, depositOut: _depositOut),
+              _GallonCard(full: _full, empty: _empty),
               const SizedBox(height: 8),
               Text('Stok produk (isi hitungan fisik)',
                   style: Theme.of(context).textTheme.titleMedium),
@@ -183,9 +180,8 @@ class _StockRow extends StatelessWidget {
 }
 
 class _GallonCard extends StatelessWidget {
-  final TextEditingController full, empty, depositOut;
-  const _GallonCard(
-      {required this.full, required this.empty, required this.depositOut});
+  final TextEditingController full, empty;
+  const _GallonCard({required this.full, required this.empty});
 
   @override
   Widget build(BuildContext context) {
@@ -212,7 +208,6 @@ class _GallonCard extends StatelessWidget {
             Row(children: [
               field('isi', full),
               field('kosong', empty),
-              field('beredar', depositOut),
             ]),
           ],
         ),

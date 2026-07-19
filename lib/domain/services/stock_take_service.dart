@@ -25,28 +25,23 @@ class StockTakeService {
         );
   }
 
-  /// Adjust the gallon container balance (full/empty/depositOut) to the
-  /// physical count. One adjustment row with a per-column delta. No-op if all
-  /// equal.
+  /// Adjust the gallon container balance (full/empty) to the physical count.
+  /// One adjustment row with a per-column delta. No-op if both equal.
   Future<void> adjustGallon({
     required int full,
     required int empty,
-    required int depositOut,
     String? note,
   }) async {
     final b = await db.gallonBalance();
     final dFull = full - b.full;
     final dEmpty = empty - b.empty;
-    final dDeposit = depositOut - b.depositOut;
-    if (dFull == 0 && dEmpty == 0 && dDeposit == 0) return;
+    if (dFull == 0 && dEmpty == 0) return;
     await db.into(db.gallonLedger).insert(
           GallonLedgerCompanion.insert(
             type: 'adjustment',
             dFull: Value(dFull),
             dEmpty: Value(dEmpty),
-            dDeposit: Value(dDeposit),
-            note: Value(note ??
-                'Opname galon (isi $full/kosong $empty/beredar $depositOut)'),
+            note: Value(note ?? 'Opname galon (isi $full/kosong $empty)'),
           ),
         );
   }

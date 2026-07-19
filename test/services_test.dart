@@ -23,7 +23,7 @@ void main() {
     expect(products, isNotEmpty);
     expect(products.where((p) => p.isGallon), isNotEmpty);
     expect(products.every((p) => p.sellPrice > p.buyPrice), isTrue);
-    // Gallons carry a per-product deposit; non-gallons don't.
+    // Gallons carry a per-product container price; non-gallons don't.
     expect(products.where((p) => p.isGallon).every((p) => p.depositPrice > 0),
         isTrue);
     expect(products.where((p) => !p.isGallon).every((p) => p.depositPrice == 0),
@@ -49,31 +49,25 @@ void main() {
     expect(summary.grossProfit, (p.sellPrice - p.buyPrice) * 3);
   });
 
-  test('gallon: new sale + deposit, then exchange, container balance consistent',
-      () async {
+  test('gallon: new sale (one price, no deposit), then exchange, container '
+      'balance consistent', () async {
     final gallon = GallonService(db);
 
     // Restock 10 filled gallons (empty swap — empty goes negative, expected
     // for opening stock; the opening adjustment follows in the stock UI).
     await gallon.recordRestockExchange(qty: 10);
 
-    // New customer: 2 gallons + deposit.
-    await gallon.recordNewGallonSale(qty: 2, depositPerGallon: 40000);
+    // New customer: 2 brand-new gallons — container leaves the fleet for
+    // good, no dEmpty/dDeposit written.
+    await gallon.recordNewGallonSale(qty: 2);
     var b = await db.gallonBalance();
     expect(b.full, 8);
-    expect(b.depositOut, 2); // containers out = liability
 
-    // Deposit enters cash BUT is not revenue.
-    expect(await db.cashBalance(), 80000);
-    final summary = await ReportsService(db).dailySummary(DateTime.now());
-    expect(summary.revenue, 0);
-
-    // Subscriber: exchange 1 gallon.
+    // Subscriber: exchange 1 gallon (isi ulang, bawa kosong).
     await gallon.recordExchange(qty: 1);
     b = await db.gallonBalance();
     expect(b.full, 7);
     expect(b.empty, -10 + 1); // -10 from restock swap + 1 from the customer
-    expect(b.depositOut, 2);
   });
 
   test('cashier closing: difference recorded as adjustment, not overwrite',
@@ -243,12 +237,11 @@ void main() {
     var b = await db.gallonBalance();
     expect(b.empty, -10);
 
-    // Stock take: real physical full 10, empty 5, depositOut 0.
-    await stockTake.adjustGallon(full: 10, empty: 5, depositOut: 0);
+    // Stock take: real physical full 10, empty 5.
+    await stockTake.adjustGallon(full: 10, empty: 5);
     b = await db.gallonBalance();
     expect(b.full, 10);
     expect(b.empty, 5); // -10 corrected by +15 to 5
-    expect(b.depositOut, 0);
   });
 
   test('sync: pendingRows respects the per-table cursor', () async {
@@ -354,8 +347,8 @@ void main() {
     expect(await credit.suppliersWithDebt(), isEmpty);
   });
 
-  test('recordSale gallon: container + deposit atomic, customerId attached',
-      () async {
+  test('recordSale gallon newCustomer: one price (water + container), '
+      'no deposit, container leaves the fleet', () async {
     final sales = SalesService(db, GallonService(db));
     final customerId = await db
         .into(db.customers)
@@ -364,28 +357,32 @@ void main() {
           ..where((t) => t.isGallon.equals(true))
           ..limit(1))
         .getSingle();
+    final onePrice = g.sellPrice + g.depositPrice;
 
-    // One recordSale call carries the gallon container + deposit.
+    // One recordSale call: water + container in a single priced line.
     await sales.recordSale(
       lines: [
         SaleLine(
           productId: g.id,
           qtyBase: 2,
-          price: g.sellPrice,
+          price: onePrice,
           gallonMode: GallonSaleMode.newCustomer,
-          deposit: g.depositPrice,
         ),
       ],
       customerId: customerId,
     );
 
-    // Water out, container out on deposit, cash = sale + deposit — all written.
+    // Water out, container leaves for good (full -2, no empty/deposit),
+    // cash = the one combined price. All revenue, no liability.
     expect(await db.stockOf(g.id), -2);
     final b = await db.gallonBalance();
-    expect(b.depositOut, 2);
-    expect(await db.cashBalance(), g.sellPrice * 2 + g.depositPrice * 2);
+    expect(b.full, -2);
+    expect(b.empty, 0);
+    expect(await db.cashBalance(), onePrice * 2);
+    final summary = await ReportsService(db).dailySummary(DateTime.now());
+    expect(summary.revenue, onePrice * 2);
 
-    // Deposit liability is attributable, not anonymous.
+    // Ledger row is attributed to the customer (informational, not liability).
     final ledger = await (db.select(db.gallonLedger)
           ..where((t) => t.type.equals('sale_new')))
         .getSingle();
@@ -410,9 +407,8 @@ void main() {
           SaleLine(
             productId: g.id,
             qtyBase: 1,
-            price: g.sellPrice,
+            price: g.sellPrice + g.depositPrice,
             gallonMode: GallonSaleMode.newCustomer,
-            deposit: g.depositPrice,
           ),
         ],
         customerId: customerId,
@@ -424,7 +420,7 @@ void main() {
     expect(await db.select(db.sales).get(), isEmpty);
     expect(await db.stockOf(g.id), 0);
     expect(await db.cashBalance(), 0);
-    expect((await db.gallonBalance()).depositOut, 0);
+    expect((await db.gallonBalance()).full, 0);
   });
 
   test('periodReport aggregates across days; dailyReport stays single-day',
@@ -475,10 +471,8 @@ class _ThrowingGallon extends GallonService {
   @override
   Future<void> recordNewGallonSale({
     required int qty,
-    required double depositPerGallon,
     int? customerId,
     int? saleId,
-    String account = 'cash',
   }) async {
     throw Exception('gallon step failed');
   }

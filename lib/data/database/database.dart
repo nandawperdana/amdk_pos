@@ -85,7 +85,7 @@ class AppDatabase extends _$AppDatabase {
       required double buy,
       required double sell,
       bool isGallon = false,
-      double deposit = 0,
+      double containerPrice = 0,
     }) =>
         ProductsCompanion.insert(
           name: name,
@@ -96,18 +96,19 @@ class AppDatabase extends _$AppDatabase {
           buyPrice: Value(buy),
           sellPrice: Value(sell),
           isGallon: Value(isGallon),
-          depositPrice: Value(deposit),
+          depositPrice: Value(containerPrice),
         );
 
     await batch((b) => b.insertAll(products, [
-          // Gallons (water; the container goes through GallonLedger)
+          // Gallons (water sellPrice = isi ulang; containerPrice added on
+          // top when selling a brand-new gallon, one price, no deposit)
           p(name: 'Galon Aqua 19L', brand: 'Aqua', category: 'gallon',
-              buy: 17000, sell: 20000, isGallon: true, deposit: 40000),
+              buy: 17000, sell: 20000, isGallon: true, containerPrice: 40000),
           p(name: 'Galon Le Minerale 15L', brand: 'Le Minerale',
               category: 'gallon', buy: 15000, sell: 18000, isGallon: true,
-              deposit: 40000),
+              containerPrice: 40000),
           p(name: 'Galon Cleo 19L', brand: 'Cleo', category: 'gallon',
-              buy: 16000, sell: 19000, isGallon: true, deposit: 40000),
+              buy: 16000, sell: 19000, isGallon: true, containerPrice: 40000),
           // Cups (sold per pcs, bought per box)
           p(name: 'Aqua Gelas 240ml', brand: 'Aqua', category: 'cup',
               packUnit: 'dus', packSize: 48, buy: 550, sell: 1000),
@@ -152,17 +153,19 @@ class AppDatabase extends _$AppDatabase {
     return row.read<double>('bal');
   }
 
-  /// Gallon reconciliation: full, empty, and out on deposit. Summed in SQLite.
+  /// Gallon reconciliation: full & empty. Summed in SQLite.
+  /// (d_deposit stays in the schema as a dormant, never-written column — no
+  /// migration needed — but nothing reads it anymore: containers sold new
+  /// leave the fleet for good, one price, no deposit/refund.)
   Future<GallonBalance> gallonBalance() async {
     final row = await customSelect(
-      'SELECT COALESCE(SUM(d_full), 0) AS f, COALESCE(SUM(d_empty), 0) AS e, '
-      'COALESCE(SUM(d_deposit), 0) AS d FROM gallon_ledger',
+      'SELECT COALESCE(SUM(d_full), 0) AS f, COALESCE(SUM(d_empty), 0) AS e '
+      'FROM gallon_ledger',
       readsFrom: {gallonLedger},
     ).getSingle();
     return GallonBalance(
       full: row.read<int>('f'),
       empty: row.read<int>('e'),
-      depositOut: row.read<int>('d'),
     );
   }
 }
@@ -170,10 +173,5 @@ class AppDatabase extends _$AppDatabase {
 class GallonBalance {
   final int full; // filled gallons ready to sell
   final int empty; // empty gallons (to swap at the agent)
-  final int depositOut; // containers out with customers (liability)
-  const GallonBalance({
-    required this.full,
-    required this.empty,
-    required this.depositOut,
-  });
+  const GallonBalance({required this.full, required this.empty});
 }

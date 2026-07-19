@@ -4,19 +4,20 @@ import '../../data/database/database.dart';
 
 /// How a gallon line is sold. Domain-level (mapped from the UI at the POS).
 ///   none        = not a gallon line
-///   exchange    = customer brings an empty (container swap, no deposit)
-///   newCustomer = new container leaves on deposit (liability)
+///   exchange    = customer brings an empty back, buys water only (isi ulang)
+///   newCustomer = customer buys a brand-new container + water, ONE price,
+///                 no deposit — the container leaves the shop's fleet for good
 enum GallonSaleMode { none, exchange, newCustomer }
 
 /// Handles the gallon CONTAINER (not the water).
 /// Water/revenue is still recorded via SalesService/PurchaseService.
-/// Here we only move containers + deposit money.
+/// Here we only move containers between full/empty.
 class GallonService {
   final AppDatabase db;
   GallonService(this.db);
 
   /// Sell a gallon with an EXCHANGE: the customer brings back an empty.
-  /// Only water is sold. Container: full -qty, empty +qty. Deposit unchanged.
+  /// Only water is sold. Container: full -qty, empty +qty.
   Future<void> recordExchange({
     required int qty,
     int? customerId,
@@ -34,74 +35,23 @@ class GallonService {
         );
   }
 
-  /// Sell a gallon to a NEW customer (buys water + container/deposit).
-  /// Container: full -qty, no empty in, depositOut +qty (LIABILITY).
-  /// Deposit money goes into cash with category 'gallon_deposit' (not revenue).
+  /// Sell a brand-new container to a customer, one price (water + container),
+  /// no deposit. The container leaves the fleet for good: full -qty only —
+  /// it never comes back as empty or triggers a refund.
   Future<void> recordNewGallonSale({
     required int qty,
-    required double depositPerGallon,
     int? customerId,
     int? saleId,
-    String account = 'cash',
   }) async {
-    await db.transaction(() async {
-      await db.into(db.gallonLedger).insert(
-            GallonLedgerCompanion.insert(
-              type: 'sale_new',
-              dFull: Value(-qty),
-              dDeposit: Value(qty),
-              customerId: Value(customerId),
-              refType: const Value('sale'),
-              refId: Value(saleId),
-            ),
-          );
-
-      if (depositPerGallon > 0) {
-        await db.into(db.cashEntries).insert(
-              CashEntriesCompanion.insert(
-                direction: 'in',
-                amount: depositPerGallon * qty,
-                category: 'gallon_deposit',
-                account: Value(account),
-                refType: const Value('sale'),
-                refId: Value(saleId),
-                note: const Value('Titipan deposit galon (kewajiban)'),
-              ),
-            );
-      }
-    });
-  }
-
-  /// Customer returns a gallon and withdraws the deposit.
-  /// Container: depositOut -qty, empty +qty. Cash OUT (refund).
-  Future<void> recordDepositReturn({
-    required int qty,
-    required double depositPerGallon,
-    int? customerId,
-    String account = 'cash',
-  }) async {
-    await db.transaction(() async {
-      await db.into(db.gallonLedger).insert(
-            GallonLedgerCompanion.insert(
-              type: 'deposit_return',
-              dEmpty: Value(qty),
-              dDeposit: Value(-qty),
-              customerId: Value(customerId),
-            ),
-          );
-
-      if (depositPerGallon > 0) {
-        await db.into(db.cashEntries).insert(
-              CashEntriesCompanion.insert(
-                direction: 'out',
-                amount: depositPerGallon * qty,
-                category: 'gallon_deposit',
-                account: Value(account),
-                note: const Value('Refund deposit galon'),
-              ),
-            );
-      }
-    });
+    await db.into(db.gallonLedger).insert(
+          GallonLedgerCompanion.insert(
+            type: 'sale_new',
+            dFull: Value(-qty),
+            customerId: Value(customerId),
+            refType: const Value('sale'),
+            refId: Value(saleId),
+          ),
+        );
   }
 
   /// Restock filled gallons from the agent by swapping empties.

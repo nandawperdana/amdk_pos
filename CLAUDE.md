@@ -39,19 +39,25 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
   pernah sentuh DB langsung (mis. tambah pelanggan/supplier lewat
   `PartyService`). Provider/DI di `lib/providers.dart` (`main.dart` re-export).
 
-## Aturan domain paling penting: galon = DUA barang
+## Aturan domain paling penting: galon = DUA barang, TANPA deposit
 
 - **Air** = barang dagangan, habis terjual → lewat stok produk biasa.
-- **Wadah galon** = aset berputar bernilai deposit → lewat `GallonLedger`,
-  TERPISAH dari stok produk.
-- Tiga saldo wadah (kolom `GallonBalance`): `full` (isi, siap jual),
-  `empty` (kosong, mau ditukar ke agen), `depositOut` (beredar di tangan
-  pelanggan = KEWAJIBAN, bukan omzet).
-- Uang deposit masuk kas dengan kategori `gallon_deposit` — jangan dihitung
-  sebagai pendapatan/laba.
-- Skenario yang sudah ada di `GallonService`: `recordExchange` (tukar),
-  `recordNewGallonSale` (pelanggan baru + deposit), `recordDepositReturn`
-  (tarik deposit/refund), `recordRestockExchange` (kulakan tukar).
+- **Wadah galon** = lewat `GallonLedger`, TERPISAH dari stok produk (dua
+  saldo: `full` isi siap jual, `empty` kosong mau ditukar ke agen).
+- **TIDAK ADA deposit/refund.** Dua skenario jual galon di POS:
+  - **Isi ulang** (`GallonSaleMode.exchange`): pelanggan bawa wadah kosong,
+    cuma bayar `sellPrice` (harga air). Wadah: `full -qty`, `empty +qty`.
+  - **Galon baru** (`GallonSaleMode.newCustomer`): wadah + isi dijual putus,
+    **satu harga** = `sellPrice + depositPrice` (kolom `depositPrice` dipakai
+    ulang jadi harga wadah, BUKAN deposit) — **100% masuk omzet**. Wadah
+    keluar dari armada toko selamanya: `full -qty` saja, tanpa `empty`/balik.
+  - Galon sekali beli (tanpa isi ulang) = produk biasa (`isGallon=false`),
+    tanpa penanganan khusus.
+- Skenario di `GallonService`: `recordExchange` (isi ulang), `recordNewGallonSale`
+  (galon baru, satu harga), `recordRestockExchange` (kulakan tukar kosong ke
+  agen). `recordDepositReturn` SUDAH DIHAPUS (Fase 3 P0, lihat riwayat commit).
+- Kolom `GallonLedger.dDeposit` & `GallonBalance` field terkait tetap ada di
+  schema (dormant, tanpa migrasi) tapi tak lagi ditulis/dibaca kode manapun.
 
 ## Keputusan yang sudah diambil (final)
 
@@ -75,9 +81,13 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
 
 ## Keputusan yang sudah DITUTUP
 
-- **Nilai deposit galon**: DIPUTUS per-produk (kolom `Products.depositPrice`,
-  editable di master produk). POS pakai `p.depositPrice`. Backfill galon lama
-  ke 40000 saat migrasi v3→v4.
+- **Harga wadah galon**: DIPUTUS per-produk (kolom `Products.depositPrice`,
+  editable di master produk). Backfill galon lama ke 40000 saat migrasi v3→v4.
+- **Model galon: TANPA deposit/refund** (diputuskan ulang, gantikan model
+  deposit-liability sebelumnya). Galon baru = satu harga (`sellPrice +
+  depositPrice`), 100% omzet, wadah keluar armada selamanya. Isi ulang tetap
+  swap kosong seperti biasa. Alasan: operasional lebih sederhana, owner belum
+  butuh proses pengembalian deposit.
 
 ## Roadmap
 
@@ -97,7 +107,8 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
   Owner).
 - Seed 8 produk saat DB pertama dibuat (`AppDatabase._seedProducts`).
 - POS HP (`lib/ui/pos_screen.dart`) — grid tombol besar, galon wajib pilih
-  tukar/baru+deposit, bayar tunai/qris/transfer. Menu lain di overflow.
+  isi-ulang/galon-baru (satu harga, tanpa deposit), bayar tunai/qris/transfer.
+  Menu lain di overflow.
 - Master produk CRUD (`lib/ui/master_product_screen.dart` + `ProductService`) —
   tambah/edit/nonaktif (soft-delete, tak hapus baris); `isGallon` diikat
   kategori=='gallon'.
@@ -142,9 +153,25 @@ SELESAI di Fase 2:
 - QRIS/transfer sebagai metode pelunasan piutang/utang — dialog di
   `credit_screen.dart` punya pilihan Tunai/QRIS/Transfer, pakai param
   `account` yang sudah ada di `CreditService`.
+- Rework model galon: HAPUS deposit/refund total (lihat bagian domain di
+  atas). `recordDepositReturn` dihapus, `GallonBalance.depositOut` dihapus,
+  tile owner "Galon beredar" & menu "Tarik deposit galon" dihapus, field
+  opname "beredar" dihapus. Galon baru sekarang satu harga (100% omzet).
 
-Lanjut ke Fase 3 (antar galon, langganan galon bulanan, multi-toko,
-analitik) — lihat bagian Roadmap di atas untuk detail.
+## Penyesuaian requirement (P0 selesai, P1+ menunggu prioritas eksekusi)
+
+Owner minta beberapa penyesuaian; P0 (rework galon di atas) sudah selesai.
+Sisanya BELUM dikerjakan, urutan disarankan:
+
+- **P1**: jual per dus/pack di POS & kulakan (skema `packUnit`/`packSize`
+  sudah ada); nav drawer ganti overflow menu; kontrol akses per peran
+  (master produk: kasir cuma enable/disable, owner full; kulakan owner-only).
+- **P2**: pisah kredensial Supabase dev vs prod; release APK ber-signature;
+  owner baca laporan dari cloud (offline-capable — bukan cuma DB lokal,
+  supaya bisa dipasang di HP owner terpisah dari kasir); auto-sync harian;
+  PIN lokal per peran (kasir/owner) sebagai kredensial akses.
+- **P3** (Fase 3 lama): antar galon, langganan galon bulanan, multi-toko,
+  analitik — lihat bagian Roadmap di atas.
 
 DITUNDA (belum ada kebutuhan):
 - Harga reseller — belum berencana punya reseller. Tabel `Customers.type`

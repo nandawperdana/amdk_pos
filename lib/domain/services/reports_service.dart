@@ -29,8 +29,7 @@ class ProductSales {
   });
 }
 
-/// Cash flow per category within a day (e.g. 'sale', 'purchase',
-/// 'gallon_deposit', 'adjustment').
+/// Cash flow per category within a day (e.g. 'sale', 'purchase', 'adjustment').
 class CashByCategory {
   final String category;
   final double inflow;

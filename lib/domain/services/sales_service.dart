@@ -6,16 +6,16 @@ import 'gallon_service.dart';
 class SaleLine {
   final int productId;
   final int qtyBase; // in base units
-  final double price; // per base unit
+  /// Per base unit. For a newCustomer gallon line, this already includes the
+  /// container price (water + container, one price, no deposit).
+  final double price;
   /// Gallon intent for this line (none for regular products).
   final GallonSaleMode gallonMode;
-  final double deposit; // per gallon, only for newCustomer mode
   const SaleLine({
     required this.productId,
     required this.qtyBase,
     required this.price,
     this.gallonMode = GallonSaleMode.none,
-    this.deposit = 0,
   });
   double get subtotal => qtyBase * price;
 }
@@ -27,14 +27,13 @@ class SalesService {
 
   /// Record one sale ATOMICALLY in a single DB transaction:
   /// header + items + stock card (out) + cash book (in) + gallon container
-  /// movements + deposit. Nothing can be left half-written — if any step
-  /// fails, the whole sale rolls back.
+  /// movements. Nothing can be left half-written — if any step fails, the
+  /// whole sale rolls back.
   ///
   /// On credit (paymentStatus 'receivable'): the sale is still revenue and
-  /// stock still goes out, but NO sale cash row is written — the customer
-  /// owes it. Collect later via CreditService.recordReceivablePayment.
-  /// Requires a customerId. The gallon deposit (if any) is still collected in
-  /// cash.
+  /// stock still goes out, but NO cash row is written — the customer owes
+  /// it. Collect later via CreditService.recordReceivablePayment. Requires a
+  /// customerId.
   Future<int> recordSale({
     required List<SaleLine> lines,
     int? customerId,
@@ -80,19 +79,15 @@ class SalesService {
               ),
             );
 
-        // Gallon container (same transaction). customerId is attached so the
-        // deposit liability is attributable, not anonymous.
+        // Gallon container (same transaction) — water price already covers
+        // the container for a newCustomer line (one price, no deposit).
         switch (l.gallonMode) {
           case GallonSaleMode.exchange:
             await gallon.recordExchange(
                 qty: l.qtyBase, customerId: customerId, saleId: saleId);
           case GallonSaleMode.newCustomer:
             await gallon.recordNewGallonSale(
-                qty: l.qtyBase,
-                depositPerGallon: l.deposit,
-                customerId: customerId,
-                saleId: saleId,
-                account: account);
+                qty: l.qtyBase, customerId: customerId, saleId: saleId);
           case GallonSaleMode.none:
             break;
         }

@@ -27,8 +27,9 @@ class Products extends Table {
   /// flows through GallonLedger.
   BoolColumn get isGallon => boolean().withDefault(const Constant(false))();
 
-  /// Container deposit per unit, set per gallon product (0 for non-gallon).
-  /// Used at POS when selling a gallon to a new customer.
+  /// Container price per unit, set per gallon product (0 for non-gallon).
+  /// Added to sellPrice when selling a brand-new gallon (water + container,
+  /// one price, no deposit/refund).
   RealColumn get depositPrice => real().withDefault(const Constant(0))();
 
   BoolColumn get active => boolean().withDefault(const Constant(true))();
@@ -128,7 +129,7 @@ class CashEntries extends Table {
   TextColumn get direction => text()();
   RealColumn get amount => real()();
 
-  /// 'sale' | 'purchase' | 'expense' | 'capital' | 'drawing' | 'gallon_deposit'
+  /// 'sale' | 'purchase' | 'expense' | 'capital' | 'drawing'
   /// | 'adjustment' (cashier-closing difference, see CashierClosings)
   TextColumn get category => text()();
 
@@ -157,15 +158,17 @@ class CashierClosings extends Table {
 }
 
 /// Gallon ledger — tracks the CONTAINER (not the water).
-/// Three balances derived from SUM of the delta columns:
-///   full        = SUM(dFull)     filled gallons ready to sell
-///   empty       = SUM(dEmpty)    empty gallons waiting to swap at the agent
-///   depositOut  = SUM(dDeposit)  containers held by customers (YOUR liability)
+/// Two balances derived from SUM of the delta columns:
+///   full   = SUM(dFull)   filled gallons ready to sell
+///   empty  = SUM(dEmpty)  empty gallons waiting to swap at the agent
+/// A new container sold ('sale_new') leaves the fleet for good — one price
+/// (water + container), no deposit, no return. dDeposit stays in the schema
+/// as a dormant column (no migration needed) but nothing writes it anymore.
 class GallonLedger extends Table {
   IntColumn get id => integer().autoIncrement()();
   DateTimeColumn get date => dateTime().withDefault(currentDateAndTime)();
 
-  /// 'restock' | 'sale_exchange' | 'sale_new' | 'deposit_return' | 'adjustment'
+  /// 'restock' | 'sale_exchange' | 'sale_new' | 'adjustment'
   TextColumn get type => text()();
 
   IntColumn get dFull => integer().withDefault(const Constant(0))();

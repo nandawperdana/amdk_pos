@@ -37,16 +37,16 @@ class CartLine {
   final Product product;
   int qty;
   final GallonSaleMode gallonMode; // none for non-gallon
-  final double deposit; // per gallon, only for newCustomer mode
 
-  CartLine(this.product,
-      {this.qty = 1,
-      this.gallonMode = GallonSaleMode.none,
-      this.deposit = 0});
+  CartLine(this.product, {this.qty = 1, this.gallonMode = GallonSaleMode.none});
 
-  double get subtotal => product.sellPrice * qty;
-  double get depositTotal =>
-      gallonMode == GallonSaleMode.newCustomer ? deposit * qty : 0;
+  /// Per-unit price for this line. A newCustomer gallon is ONE price
+  /// (water + container, no deposit) — everything else is just sellPrice.
+  double get unitPrice => gallonMode == GallonSaleMode.newCustomer
+      ? product.sellPrice + product.depositPrice
+      : product.sellPrice;
+
+  double get subtotal => unitPrice * qty;
 }
 
 class PosScreen extends ConsumerStatefulWidget {
@@ -61,7 +61,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   bool _saving = false;
 
   double get _total => _cart.fold(0, (s, l) => s + l.subtotal);
-  double get _depositTotal => _cart.fold(0, (s, l) => s + l.depositTotal);
 
   // ---------------------------------------------------------------------
   // Add to cart
@@ -86,7 +85,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     }
   }
 
-  /// A gallon must pick a mode: exchange (brings an empty) or new (+ deposit).
+  /// A gallon must pick a mode: exchange (isi ulang, bawa kosong) or new
+  /// (galon + wadah, satu harga, tanpa deposit).
   Future<CartLine?> _askGallonMode(Product p) {
     return showModalBottomSheet<CartLine>(
       context: context,
@@ -103,7 +103,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 height: 56,
                 child: FilledButton.icon(
                   icon: const Icon(Icons.swap_horiz),
-                  label: const Text('TUKAR — pelanggan bawa galon kosong'),
+                  label: Text(
+                      'ISI ULANG — bawa galon kosong (${rupiah.format(p.sellPrice)})'),
                   onPressed: () => Navigator.pop(
                       ctx, CartLine(p, gallonMode: GallonSaleMode.exchange)),
                 ),
@@ -114,12 +115,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.add_circle_outline),
                   label: Text(
-                      'BARU — + deposit ${rupiah.format(p.depositPrice)}'),
+                      'GALON BARU — ${rupiah.format(p.sellPrice + p.depositPrice)} (galon + wadah)'),
                   onPressed: () => Navigator.pop(
-                      ctx,
-                      CartLine(p,
-                          gallonMode: GallonSaleMode.newCustomer,
-                          deposit: p.depositPrice)),
+                      ctx, CartLine(p, gallonMode: GallonSaleMode.newCustomer)),
                 ),
               ),
             ],
@@ -143,13 +141,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Total ${rupiah.format(_total + _depositTotal)}',
+              Text('Total ${rupiah.format(_total)}',
                   style: Theme.of(ctx).textTheme.headlineSmall),
-              if (_depositTotal > 0)
-                Text(
-                    '(${rupiah.format(_total)} penjualan + '
-                    '${rupiah.format(_depositTotal)} deposit galon)',
-                    style: Theme.of(ctx).textTheme.bodyMedium),
               const SizedBox(height: 16),
               for (final m in _paymentOptions)
                 Padding(
@@ -162,8 +155,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     ),
                   ),
                 ),
-              // Credit (bon): whole sale becomes a customer's tab. Gallon
-              // deposit is still collected in cash.
+              // Credit (bon): whole sale becomes a customer's tab.
               SizedBox(
                 height: 56,
                 child: OutlinedButton.icon(
@@ -179,12 +171,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     );
     if (method == null || !mounted) return;
 
-    // A customer is required for credit AND whenever a container leaves on
-    // deposit (newCustomer gallon), so the deposit liability is attributable.
-    final needsCustomer = method == 'credit' ||
-        _cart.any((l) => l.gallonMode == GallonSaleMode.newCustomer);
+    // Credit needs a customer (their tab).
     Party? customer;
-    if (needsCustomer) {
+    if (method == 'credit') {
       customer = await pickParty(context, ref, isCustomer: true);
       if (customer == null || !mounted) return; // cancelled → abort save
     }
@@ -200,16 +189,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       };
 
       // Water + gallon container written ATOMICALLY in one transaction.
-      // customerId flows through so the deposit liability is attributable.
       await sales.recordSale(
         lines: [
           for (final l in _cart)
             SaleLine(
               productId: l.product.id,
               qtyBase: l.qty,
-              price: l.product.sellPrice,
+              price: l.unitPrice,
               gallonMode: l.gallonMode,
-              deposit: l.deposit,
             ),
         ],
         paymentMethod: method == 'credit' ? 'cash' : method,
@@ -221,8 +208,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       if (mounted) {
         final msg = method == 'credit'
             ? 'Piutang ${customer!.name} — ${rupiah.format(_total)}'
-                '${_depositTotal > 0 ? ' (+ deposit ${rupiah.format(_depositTotal)} tunai)' : ''}'
-            : 'Tersimpan — ${rupiah.format(_total + _depositTotal)}';
+            : 'Tersimpan — ${rupiah.format(_total)}';
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(msg)));
         setState(_cart.clear);
@@ -234,83 +220,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       }
     } finally {
       if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  // ---------------------------------------------------------------------
-  // Deposit return (customer brings a container back, gets the deposit)
-  // ---------------------------------------------------------------------
-
-  Future<void> _returnDeposit() async {
-    final gallons = (ref.read(activeProductsProvider).valueOrNull ?? [])
-        .where((p) => p.isGallon)
-        .toList();
-    if (gallons.isEmpty) return;
-
-    final customer = await pickParty(context, ref, isCustomer: true);
-    if (customer == null || !mounted) return;
-
-    var product = gallons.first;
-    final qtyCtrl = TextEditingController(text: '1');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: Text('Tarik deposit — ${customer.name}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<Product>(
-                initialValue: product,
-                decoration: const InputDecoration(labelText: 'Galon'),
-                items: [
-                  for (final g in gallons)
-                    DropdownMenuItem(
-                        value: g,
-                        child: Text(
-                            '${g.name} (${rupiah.format(g.depositPrice)})')),
-                ],
-                onChanged: (v) => setLocal(() => product = v!),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: qtyCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Jumlah galon'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Batal')),
-            FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Refund')),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || !mounted) return;
-
-    final qty = int.tryParse(qtyCtrl.text) ?? 0;
-    if (qty <= 0) return;
-    try {
-      await ref.read(gallonServiceProvider).recordDepositReturn(
-            qty: qty,
-            depositPerGallon: product.depositPrice,
-            customerId: customer.id,
-          );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'Deposit ${customer.name}: refund ${rupiah.format(product.depositPrice * qty)}')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Gagal: $e')));
-      }
     }
   }
 
@@ -365,12 +274,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     title: Text('Piutang & Utang')),
               ),
               PopupMenuItem(
-                value: _returnDeposit,
-                child: const ListTile(
-                    leading: Icon(Icons.assignment_return_outlined),
-                    title: Text('Tarik deposit galon')),
-              ),
-              PopupMenuItem(
                 value: () => ref.read(roleProvider.notifier).select(null),
                 child: const ListTile(
                     leading: Icon(Icons.switch_account),
@@ -415,7 +318,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               child: Text(
                 _cart.isEmpty
                     ? 'Keranjang kosong'
-                    : 'BAYAR  ${rupiah.format(_total + _depositTotal)}',
+                    : 'BAYAR  ${rupiah.format(_total)}',
                 style: const TextStyle(fontSize: 20),
               ),
             ),
@@ -439,13 +342,13 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           final l = _cart[i];
           final label = switch (l.gallonMode) {
             GallonSaleMode.exchange => ' (tukar)',
-            GallonSaleMode.newCustomer => ' (baru+deposit)',
+            GallonSaleMode.newCustomer => ' (galon baru)',
             GallonSaleMode.none => '',
           };
           return ListTile(
             dense: true,
             title: Text('${l.product.name}$label'),
-            subtitle: Text(rupiah.format(l.subtotal + l.depositTotal)),
+            subtitle: Text(rupiah.format(l.subtotal)),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

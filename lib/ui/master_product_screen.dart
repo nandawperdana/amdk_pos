@@ -181,15 +181,19 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
               const Padding(
                 padding: EdgeInsets.only(top: 4),
                 child: Text(
-                    'Produk galon: wadahnya dilacak di buku galon (isi/kosong/'
-                    'beredar), terpisah dari stok air.',
+                    'Produk galon: wadah isi/kosong dilacak di buku galon, '
+                    'terpisah dari stok air. Harga jual di atas = harga isi '
+                    'ulang (pelanggan bawa galon kosong).',
                     style: TextStyle(fontSize: 12)),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _deposit,
                 decoration: const InputDecoration(
-                    labelText: 'Deposit wadah (per galon)', prefixText: 'Rp '),
+                    labelText: 'Harga wadah (untuk galon baru)',
+                    helperText: 'Ditambah ke harga jual saat galon baru '
+                        '(wadah + isi) dijual putus, tanpa deposit',
+                    prefixText: 'Rp '),
                 keyboardType: TextInputType.number,
               ),
             ],

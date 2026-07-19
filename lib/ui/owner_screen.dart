@@ -58,7 +58,6 @@ class OwnerScreen extends ConsumerWidget {
             const Divider(),
             _tile('Galon isi', '${d.gallon.full}'),
             _tile('Galon kosong', '${d.gallon.empty}'),
-            _tile('Galon beredar (kewajiban)', '${d.gallon.depositOut}'),
           ],
         ),
       ),
