@@ -33,7 +33,6 @@ class AppDatabase extends _$AppDatabase {
         onCreate: (m) async {
           await m.createAll();
           await _createIndexes();
-          await _seedProducts();
         },
         beforeOpen: (details) async {
           // SQLite disables FK enforcement by default; turn it on so the
@@ -59,60 +58,6 @@ class AppDatabase extends _$AppDatabase {
     for (final s in stmts) {
       await customStatement(s);
     }
-  }
-
-  /// Seed initial master products (only when the DB is first created).
-  /// Prices are Garut market estimates per base unit — the owner edits them
-  /// later via the master-product screen.
-  Future<void> _seedProducts() async {
-    ProductsCompanion p({
-      required String name,
-      String brand = '',
-      required String category,
-      String? packUnit,
-      int packSize = 1,
-      required double buy,
-      required double sell,
-      bool isGallon = false,
-      double containerPrice = 0,
-    }) =>
-        ProductsCompanion.insert(
-          name: name,
-          brand: Value(brand),
-          category: Value(category),
-          packUnit: Value(packUnit),
-          packSize: Value(packSize),
-          buyPrice: Value(buy),
-          sellPrice: Value(sell),
-          isGallon: Value(isGallon),
-          depositPrice: Value(containerPrice),
-        );
-
-    await batch((b) => b.insertAll(products, [
-          // Gallons (water sellPrice = isi ulang; containerPrice added on
-          // top when selling a brand-new gallon, one price, no deposit)
-          p(name: 'Galon Aqua 19L', brand: 'Aqua', category: 'gallon',
-              buy: 17000, sell: 20000, isGallon: true, containerPrice: 40000),
-          // Le Minerale 15L: brand sekali pakai, TIDAK bisa isi ulang —
-          // produk biasa, satu harga (bukan gallon: tanpa container/GallonLedger).
-          p(name: 'Le Minerale 15L', brand: 'Le Minerale', category: 'bottle',
-              buy: 18000, sell: 22000),
-          p(name: 'Galon Cleo 19L', brand: 'Cleo', category: 'gallon',
-              buy: 16000, sell: 19000, isGallon: true, containerPrice: 40000),
-          // Cups (sold per pcs, bought per box)
-          p(name: 'Aqua Gelas 240ml', brand: 'Aqua', category: 'cup',
-              packUnit: 'dus', packSize: 48, buy: 550, sell: 1000),
-          p(name: 'Cleo Gelas 250ml', brand: 'Cleo', category: 'cup',
-              packUnit: 'dus', packSize: 48, buy: 500, sell: 1000),
-          // Bottles
-          p(name: 'Aqua Botol 600ml', brand: 'Aqua', category: 'bottle',
-              packUnit: 'dus', packSize: 24, buy: 2500, sell: 4000),
-          p(name: 'Le Minerale Botol 600ml', brand: 'Le Minerale',
-              category: 'bottle', packUnit: 'dus', packSize: 24,
-              buy: 2300, sell: 3500),
-          p(name: 'Aqua Botol 1500ml', brand: 'Aqua', category: 'bottle',
-              packUnit: 'dus', packSize: 12, buy: 4500, sell: 6000),
-        ]));
   }
 
   // -------------------------------------------------------------------------

@@ -27,7 +27,17 @@ class MasterProductScreen extends ConsumerWidget {
     final products = ref.watch(allProductsProvider);
     final isOwner = ref.watch(roleProvider) == AppRole.owner;
     return Scaffold(
-      appBar: AppBar(title: const Text('Master Produk')),
+      appBar: AppBar(
+        title: const Text('Master Produk'),
+        actions: [
+          if (isOwner)
+            IconButton(
+              icon: const Icon(Icons.upload_file_outlined),
+              tooltip: 'Import CSV',
+              onPressed: () => _openImportDialog(context, ref),
+            ),
+        ],
+      ),
       floatingActionButton: isOwner
           ? FloatingActionButton.extended(
               icon: const Icon(Icons.add),
@@ -77,6 +87,65 @@ class MasterProductScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _openImportDialog(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController();
+    final csv = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Import CSV'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: controller,
+            maxLines: 12,
+            decoration: const InputDecoration(
+              hintText: 'name,brand,category,baseUnit,packUnit,packSize,'
+                  'buyPrice,sellPrice,packBuyPrice,packSellPrice,isGallon,'
+                  'depositPrice,active\n...tempel CSV di sini...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    if (csv == null || csv.trim().isEmpty || !context.mounted) return;
+
+    final (inserted, skipped, errors) =
+        await ref.read(productImportServiceProvider).importCsv(csv);
+    if (!context.mounted) return;
+    final parts = [
+      '$inserted produk masuk',
+      if (skipped.isNotEmpty) '${skipped.length} dilewati (sudah ada)',
+      if (errors.isNotEmpty) '${errors.length} gagal',
+    ];
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(parts.join(', '))));
+    if (errors.isNotEmpty) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Baris gagal'),
+          content: SingleChildScrollView(child: Text(errors.join('\n'))),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Tutup')),
+          ],
+        ),
+      );
+    }
   }
 
   void _openForm(BuildContext context, [Product? product]) {

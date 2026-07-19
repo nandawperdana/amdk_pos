@@ -13,13 +13,71 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Fixture products for tests (app no longer auto-seeds — real products come
+/// from CSV import or manual entry). Mirrors the old seed shape so
+/// category/isGallon-dependent tests below keep working unchanged.
+ProductsCompanion _p({
+  required String name,
+  String brand = '',
+  required String category,
+  String? packUnit,
+  int packSize = 1,
+  required double buy,
+  required double sell,
+  double packBuy = 0,
+  double packSell = 0,
+  bool isGallon = false,
+  double containerPrice = 0,
+}) =>
+    ProductsCompanion.insert(
+      name: name,
+      brand: Value(brand),
+      category: Value(category),
+      packUnit: Value(packUnit),
+      packSize: Value(packSize),
+      buyPrice: Value(buy),
+      sellPrice: Value(sell),
+      packBuyPrice: Value(packBuy),
+      packSellPrice: Value(packSell),
+      isGallon: Value(isGallon),
+      depositPrice: Value(containerPrice),
+    );
+
+Future<void> _insertFixtureProducts(AppDatabase db) => db.batch((b) => b.insertAll(db.products, [
+      _p(name: 'Galon Aqua 19L', brand: 'Aqua', category: 'gallon',
+          buy: 17000, sell: 20000, isGallon: true, containerPrice: 40000),
+      _p(name: 'Le Minerale 15L', brand: 'Le Minerale', category: 'bottle',
+          buy: 18000, sell: 22000),
+      _p(name: 'Galon Cleo 19L', brand: 'Cleo', category: 'gallon',
+          buy: 16000, sell: 19000, isGallon: true, containerPrice: 40000),
+      _p(name: 'Aqua Gelas 240ml', brand: 'Aqua', category: 'cup',
+          packUnit: 'dus', packSize: 48, buy: 550, sell: 1000,
+          packBuy: 24000, packSell: 42000),
+      _p(name: 'Cleo Gelas 250ml', brand: 'Cleo', category: 'cup',
+          packUnit: 'dus', packSize: 48, buy: 500, sell: 1000,
+          packBuy: 22000, packSell: 42000),
+      _p(name: 'Aqua Botol 600ml', brand: 'Aqua', category: 'bottle',
+          packUnit: 'dus', packSize: 24, buy: 2500, sell: 4000,
+          packBuy: 55000, packSell: 84000),
+      _p(name: 'Le Minerale Botol 600ml', brand: 'Le Minerale',
+          category: 'bottle', packUnit: 'dus', packSize: 24,
+          buy: 2300, sell: 3500, packBuy: 52000, packSell: 78000),
+      _p(name: 'Aqua Botol 1500ml', brand: 'Aqua', category: 'bottle',
+          packUnit: 'dus', packSize: 12, buy: 4500, sell: 6000,
+          packBuy: 50000, packSell: 66000),
+    ]));
+
 void main() {
   late AppDatabase db;
 
-  setUp(() => db = AppDatabase(NativeDatabase.memory()));
+  setUp(() async {
+    db = AppDatabase(NativeDatabase.memory());
+    await _insertFixtureProducts(db);
+  });
   tearDown(() => db.close());
 
-  test('seed products are inserted when the DB is created', () async {
+  test('fixture products satisfy gallon/non-gallon deposit invariant',
+      () async {
     final products = await db.select(db.products).get();
     expect(products, isNotEmpty);
     expect(products.where((p) => p.isGallon), isNotEmpty);
@@ -248,7 +306,7 @@ void main() {
   test('sync: pendingRows respects the per-table cursor', () async {
     final sync = SyncService(db, deviceId: 'dev-test');
 
-    // Seed = 8 products, cursor 0 → all pending.
+    // Fixture = 8 products, cursor 0 → all pending.
     var pending = await sync.pendingRows(db.products);
     expect(pending.length, 8);
     expect(pending.first['id'], 1);

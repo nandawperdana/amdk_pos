@@ -75,6 +75,22 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       type: DriftSqlType.double,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _packSellPriceMeta =
+      const VerificationMeta('packSellPrice');
+  @override
+  late final GeneratedColumn<double> packSellPrice = GeneratedColumn<double>(
+      'pack_sell_price', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _packBuyPriceMeta =
+      const VerificationMeta('packBuyPrice');
+  @override
+  late final GeneratedColumn<double> packBuyPrice = GeneratedColumn<double>(
+      'pack_buy_price', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   static const VerificationMeta _isGallonMeta =
       const VerificationMeta('isGallon');
   @override
@@ -113,6 +129,8 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         packSize,
         buyPrice,
         sellPrice,
+        packSellPrice,
+        packBuyPrice,
         isGallon,
         depositPrice,
         active
@@ -164,6 +182,18 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       context.handle(_sellPriceMeta,
           sellPrice.isAcceptableOrUnknown(data['sell_price']!, _sellPriceMeta));
     }
+    if (data.containsKey('pack_sell_price')) {
+      context.handle(
+          _packSellPriceMeta,
+          packSellPrice.isAcceptableOrUnknown(
+              data['pack_sell_price']!, _packSellPriceMeta));
+    }
+    if (data.containsKey('pack_buy_price')) {
+      context.handle(
+          _packBuyPriceMeta,
+          packBuyPrice.isAcceptableOrUnknown(
+              data['pack_buy_price']!, _packBuyPriceMeta));
+    }
     if (data.containsKey('is_gallon')) {
       context.handle(_isGallonMeta,
           isGallon.isAcceptableOrUnknown(data['is_gallon']!, _isGallonMeta));
@@ -205,6 +235,10 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
           .read(DriftSqlType.double, data['${effectivePrefix}buy_price'])!,
       sellPrice: attachedDatabase.typeMapping
           .read(DriftSqlType.double, data['${effectivePrefix}sell_price'])!,
+      packSellPrice: attachedDatabase.typeMapping.read(
+          DriftSqlType.double, data['${effectivePrefix}pack_sell_price'])!,
+      packBuyPrice: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}pack_buy_price'])!,
       isGallon: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}is_gallon'])!,
       depositPrice: attachedDatabase.typeMapping
@@ -237,6 +271,13 @@ class Product extends DataClass implements Insertable<Product> {
   final double buyPrice;
   final double sellPrice;
 
+  /// Price per WHOLE PACK (dus), independent of the per-base price so a dus can
+  /// be cheaper per-pcs than loose. Used only when packUnit is set and the sale/
+  /// purchase is by the pack. 0 = no separate pack price → fall back to
+  /// per-base × packSize. Stock math stays in base units regardless.
+  final double packSellPrice;
+  final double packBuyPrice;
+
   /// true = gallon product (has a circulating CONTAINER / deposit).
   /// The water still flows through normal product stock; the container
   /// flows through GallonLedger.
@@ -257,6 +298,8 @@ class Product extends DataClass implements Insertable<Product> {
       required this.packSize,
       required this.buyPrice,
       required this.sellPrice,
+      required this.packSellPrice,
+      required this.packBuyPrice,
       required this.isGallon,
       required this.depositPrice,
       required this.active});
@@ -274,6 +317,8 @@ class Product extends DataClass implements Insertable<Product> {
     map['pack_size'] = Variable<int>(packSize);
     map['buy_price'] = Variable<double>(buyPrice);
     map['sell_price'] = Variable<double>(sellPrice);
+    map['pack_sell_price'] = Variable<double>(packSellPrice);
+    map['pack_buy_price'] = Variable<double>(packBuyPrice);
     map['is_gallon'] = Variable<bool>(isGallon);
     map['deposit_price'] = Variable<double>(depositPrice);
     map['active'] = Variable<bool>(active);
@@ -293,6 +338,8 @@ class Product extends DataClass implements Insertable<Product> {
       packSize: Value(packSize),
       buyPrice: Value(buyPrice),
       sellPrice: Value(sellPrice),
+      packSellPrice: Value(packSellPrice),
+      packBuyPrice: Value(packBuyPrice),
       isGallon: Value(isGallon),
       depositPrice: Value(depositPrice),
       active: Value(active),
@@ -312,6 +359,8 @@ class Product extends DataClass implements Insertable<Product> {
       packSize: serializer.fromJson<int>(json['packSize']),
       buyPrice: serializer.fromJson<double>(json['buyPrice']),
       sellPrice: serializer.fromJson<double>(json['sellPrice']),
+      packSellPrice: serializer.fromJson<double>(json['packSellPrice']),
+      packBuyPrice: serializer.fromJson<double>(json['packBuyPrice']),
       isGallon: serializer.fromJson<bool>(json['isGallon']),
       depositPrice: serializer.fromJson<double>(json['depositPrice']),
       active: serializer.fromJson<bool>(json['active']),
@@ -330,6 +379,8 @@ class Product extends DataClass implements Insertable<Product> {
       'packSize': serializer.toJson<int>(packSize),
       'buyPrice': serializer.toJson<double>(buyPrice),
       'sellPrice': serializer.toJson<double>(sellPrice),
+      'packSellPrice': serializer.toJson<double>(packSellPrice),
+      'packBuyPrice': serializer.toJson<double>(packBuyPrice),
       'isGallon': serializer.toJson<bool>(isGallon),
       'depositPrice': serializer.toJson<double>(depositPrice),
       'active': serializer.toJson<bool>(active),
@@ -346,6 +397,8 @@ class Product extends DataClass implements Insertable<Product> {
           int? packSize,
           double? buyPrice,
           double? sellPrice,
+          double? packSellPrice,
+          double? packBuyPrice,
           bool? isGallon,
           double? depositPrice,
           bool? active}) =>
@@ -359,6 +412,8 @@ class Product extends DataClass implements Insertable<Product> {
         packSize: packSize ?? this.packSize,
         buyPrice: buyPrice ?? this.buyPrice,
         sellPrice: sellPrice ?? this.sellPrice,
+        packSellPrice: packSellPrice ?? this.packSellPrice,
+        packBuyPrice: packBuyPrice ?? this.packBuyPrice,
         isGallon: isGallon ?? this.isGallon,
         depositPrice: depositPrice ?? this.depositPrice,
         active: active ?? this.active,
@@ -374,6 +429,12 @@ class Product extends DataClass implements Insertable<Product> {
       packSize: data.packSize.present ? data.packSize.value : this.packSize,
       buyPrice: data.buyPrice.present ? data.buyPrice.value : this.buyPrice,
       sellPrice: data.sellPrice.present ? data.sellPrice.value : this.sellPrice,
+      packSellPrice: data.packSellPrice.present
+          ? data.packSellPrice.value
+          : this.packSellPrice,
+      packBuyPrice: data.packBuyPrice.present
+          ? data.packBuyPrice.value
+          : this.packBuyPrice,
       isGallon: data.isGallon.present ? data.isGallon.value : this.isGallon,
       depositPrice: data.depositPrice.present
           ? data.depositPrice.value
@@ -394,6 +455,8 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('packSize: $packSize, ')
           ..write('buyPrice: $buyPrice, ')
           ..write('sellPrice: $sellPrice, ')
+          ..write('packSellPrice: $packSellPrice, ')
+          ..write('packBuyPrice: $packBuyPrice, ')
           ..write('isGallon: $isGallon, ')
           ..write('depositPrice: $depositPrice, ')
           ..write('active: $active')
@@ -402,8 +465,21 @@ class Product extends DataClass implements Insertable<Product> {
   }
 
   @override
-  int get hashCode => Object.hash(id, name, brand, category, baseUnit, packUnit,
-      packSize, buyPrice, sellPrice, isGallon, depositPrice, active);
+  int get hashCode => Object.hash(
+      id,
+      name,
+      brand,
+      category,
+      baseUnit,
+      packUnit,
+      packSize,
+      buyPrice,
+      sellPrice,
+      packSellPrice,
+      packBuyPrice,
+      isGallon,
+      depositPrice,
+      active);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -417,6 +493,8 @@ class Product extends DataClass implements Insertable<Product> {
           other.packSize == this.packSize &&
           other.buyPrice == this.buyPrice &&
           other.sellPrice == this.sellPrice &&
+          other.packSellPrice == this.packSellPrice &&
+          other.packBuyPrice == this.packBuyPrice &&
           other.isGallon == this.isGallon &&
           other.depositPrice == this.depositPrice &&
           other.active == this.active);
@@ -432,6 +510,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<int> packSize;
   final Value<double> buyPrice;
   final Value<double> sellPrice;
+  final Value<double> packSellPrice;
+  final Value<double> packBuyPrice;
   final Value<bool> isGallon;
   final Value<double> depositPrice;
   final Value<bool> active;
@@ -445,6 +525,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.packSize = const Value.absent(),
     this.buyPrice = const Value.absent(),
     this.sellPrice = const Value.absent(),
+    this.packSellPrice = const Value.absent(),
+    this.packBuyPrice = const Value.absent(),
     this.isGallon = const Value.absent(),
     this.depositPrice = const Value.absent(),
     this.active = const Value.absent(),
@@ -459,6 +541,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.packSize = const Value.absent(),
     this.buyPrice = const Value.absent(),
     this.sellPrice = const Value.absent(),
+    this.packSellPrice = const Value.absent(),
+    this.packBuyPrice = const Value.absent(),
     this.isGallon = const Value.absent(),
     this.depositPrice = const Value.absent(),
     this.active = const Value.absent(),
@@ -473,6 +557,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<int>? packSize,
     Expression<double>? buyPrice,
     Expression<double>? sellPrice,
+    Expression<double>? packSellPrice,
+    Expression<double>? packBuyPrice,
     Expression<bool>? isGallon,
     Expression<double>? depositPrice,
     Expression<bool>? active,
@@ -487,6 +573,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (packSize != null) 'pack_size': packSize,
       if (buyPrice != null) 'buy_price': buyPrice,
       if (sellPrice != null) 'sell_price': sellPrice,
+      if (packSellPrice != null) 'pack_sell_price': packSellPrice,
+      if (packBuyPrice != null) 'pack_buy_price': packBuyPrice,
       if (isGallon != null) 'is_gallon': isGallon,
       if (depositPrice != null) 'deposit_price': depositPrice,
       if (active != null) 'active': active,
@@ -503,6 +591,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       Value<int>? packSize,
       Value<double>? buyPrice,
       Value<double>? sellPrice,
+      Value<double>? packSellPrice,
+      Value<double>? packBuyPrice,
       Value<bool>? isGallon,
       Value<double>? depositPrice,
       Value<bool>? active}) {
@@ -516,6 +606,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       packSize: packSize ?? this.packSize,
       buyPrice: buyPrice ?? this.buyPrice,
       sellPrice: sellPrice ?? this.sellPrice,
+      packSellPrice: packSellPrice ?? this.packSellPrice,
+      packBuyPrice: packBuyPrice ?? this.packBuyPrice,
       isGallon: isGallon ?? this.isGallon,
       depositPrice: depositPrice ?? this.depositPrice,
       active: active ?? this.active,
@@ -552,6 +644,12 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (sellPrice.present) {
       map['sell_price'] = Variable<double>(sellPrice.value);
     }
+    if (packSellPrice.present) {
+      map['pack_sell_price'] = Variable<double>(packSellPrice.value);
+    }
+    if (packBuyPrice.present) {
+      map['pack_buy_price'] = Variable<double>(packBuyPrice.value);
+    }
     if (isGallon.present) {
       map['is_gallon'] = Variable<bool>(isGallon.value);
     }
@@ -576,6 +674,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('packSize: $packSize, ')
           ..write('buyPrice: $buyPrice, ')
           ..write('sellPrice: $sellPrice, ')
+          ..write('packSellPrice: $packSellPrice, ')
+          ..write('packBuyPrice: $packBuyPrice, ')
           ..write('isGallon: $isGallon, ')
           ..write('depositPrice: $depositPrice, ')
           ..write('active: $active')
@@ -4505,6 +4605,8 @@ typedef $$ProductsTableCreateCompanionBuilder = ProductsCompanion Function({
   Value<int> packSize,
   Value<double> buyPrice,
   Value<double> sellPrice,
+  Value<double> packSellPrice,
+  Value<double> packBuyPrice,
   Value<bool> isGallon,
   Value<double> depositPrice,
   Value<bool> active,
@@ -4519,6 +4621,8 @@ typedef $$ProductsTableUpdateCompanionBuilder = ProductsCompanion Function({
   Value<int> packSize,
   Value<double> buyPrice,
   Value<double> sellPrice,
+  Value<double> packSellPrice,
+  Value<double> packBuyPrice,
   Value<bool> isGallon,
   Value<double> depositPrice,
   Value<bool> active,
@@ -4559,6 +4663,12 @@ class $$ProductsTableFilterComposer
 
   ColumnFilters<double> get sellPrice => $composableBuilder(
       column: $table.sellPrice, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get packSellPrice => $composableBuilder(
+      column: $table.packSellPrice, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get packBuyPrice => $composableBuilder(
+      column: $table.packBuyPrice, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<bool> get isGallon => $composableBuilder(
       column: $table.isGallon, builder: (column) => ColumnFilters(column));
@@ -4605,6 +4715,14 @@ class $$ProductsTableOrderingComposer
 
   ColumnOrderings<double> get sellPrice => $composableBuilder(
       column: $table.sellPrice, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get packSellPrice => $composableBuilder(
+      column: $table.packSellPrice,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get packBuyPrice => $composableBuilder(
+      column: $table.packBuyPrice,
+      builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<bool> get isGallon => $composableBuilder(
       column: $table.isGallon, builder: (column) => ColumnOrderings(column));
@@ -4653,6 +4771,12 @@ class $$ProductsTableAnnotationComposer
   GeneratedColumn<double> get sellPrice =>
       $composableBuilder(column: $table.sellPrice, builder: (column) => column);
 
+  GeneratedColumn<double> get packSellPrice => $composableBuilder(
+      column: $table.packSellPrice, builder: (column) => column);
+
+  GeneratedColumn<double> get packBuyPrice => $composableBuilder(
+      column: $table.packBuyPrice, builder: (column) => column);
+
   GeneratedColumn<bool> get isGallon =>
       $composableBuilder(column: $table.isGallon, builder: (column) => column);
 
@@ -4695,6 +4819,8 @@ class $$ProductsTableTableManager extends RootTableManager<
             Value<int> packSize = const Value.absent(),
             Value<double> buyPrice = const Value.absent(),
             Value<double> sellPrice = const Value.absent(),
+            Value<double> packSellPrice = const Value.absent(),
+            Value<double> packBuyPrice = const Value.absent(),
             Value<bool> isGallon = const Value.absent(),
             Value<double> depositPrice = const Value.absent(),
             Value<bool> active = const Value.absent(),
@@ -4709,6 +4835,8 @@ class $$ProductsTableTableManager extends RootTableManager<
             packSize: packSize,
             buyPrice: buyPrice,
             sellPrice: sellPrice,
+            packSellPrice: packSellPrice,
+            packBuyPrice: packBuyPrice,
             isGallon: isGallon,
             depositPrice: depositPrice,
             active: active,
@@ -4723,6 +4851,8 @@ class $$ProductsTableTableManager extends RootTableManager<
             Value<int> packSize = const Value.absent(),
             Value<double> buyPrice = const Value.absent(),
             Value<double> sellPrice = const Value.absent(),
+            Value<double> packSellPrice = const Value.absent(),
+            Value<double> packBuyPrice = const Value.absent(),
             Value<bool> isGallon = const Value.absent(),
             Value<double> depositPrice = const Value.absent(),
             Value<bool> active = const Value.absent(),
@@ -4737,6 +4867,8 @@ class $$ProductsTableTableManager extends RootTableManager<
             packSize: packSize,
             buyPrice: buyPrice,
             sellPrice: sellPrice,
+            packSellPrice: packSellPrice,
+            packBuyPrice: packBuyPrice,
             isGallon: isGallon,
             depositPrice: depositPrice,
             active: active,

@@ -22,6 +22,13 @@ class Products extends Table {
   RealColumn get buyPrice => real().withDefault(const Constant(0))(); // per base unit
   RealColumn get sellPrice => real().withDefault(const Constant(0))(); // per base unit
 
+  /// Price per WHOLE PACK (dus), independent of the per-base price so a dus can
+  /// be cheaper per-pcs than loose. Used only when packUnit is set and the sale/
+  /// purchase is by the pack. 0 = no separate pack price → fall back to
+  /// per-base × packSize. Stock math stays in base units regardless.
+  RealColumn get packSellPrice => real().withDefault(const Constant(0))();
+  RealColumn get packBuyPrice => real().withDefault(const Constant(0))();
+
   /// true = gallon product (has a circulating CONTAINER / deposit).
   /// The water still flows through normal product stock; the container
   /// flows through GallonLedger.

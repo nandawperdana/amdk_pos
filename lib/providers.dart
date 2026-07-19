@@ -12,6 +12,7 @@ import 'domain/services/credit_service.dart';
 import 'domain/services/gallon_service.dart';
 import 'domain/services/party_service.dart';
 import 'domain/services/pin_service.dart';
+import 'domain/services/product_import_service.dart';
 import 'domain/services/product_service.dart';
 import 'domain/services/purchase_service.dart';
 import 'domain/services/reports_service.dart';
@@ -39,6 +40,8 @@ final cashierServiceProvider =
     Provider((ref) => CashierService(ref.watch(dbProvider)));
 final productServiceProvider =
     Provider((ref) => ProductService(ref.watch(dbProvider)));
+final productImportServiceProvider = Provider((ref) => ProductImportService(
+    ref.watch(dbProvider), ref.watch(productServiceProvider)));
 final stockTakeServiceProvider =
     Provider((ref) => StockTakeService(ref.watch(dbProvider)));
 final creditServiceProvider =
