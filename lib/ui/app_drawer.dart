@@ -18,6 +18,7 @@ class AppDrawer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final role = ref.watch(roleProvider);
     final isOwner = role == AppRole.owner;
+    final storeName = ref.watch(storeNameProvider);
 
     void go(Widget screen) {
       Navigator.pop(context); // close the drawer first
@@ -35,7 +36,7 @@ class AppDrawer extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      Text('AMDK POS',
+                      Text(storeName,
                           style: Theme.of(context).textTheme.titleLarge),
                       if (!isProdEnv) ...[
                         const SizedBox(width: 8),

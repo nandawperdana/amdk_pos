@@ -102,6 +102,13 @@ class DailyReportScreen extends ConsumerWidget {
       body: Column(
         children: [
           Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Text(
+              ref.watch(storeNameProvider),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Wrap(
               spacing: 8,
