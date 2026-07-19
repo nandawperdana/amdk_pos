@@ -26,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'amdk_pos'));
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 1;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -34,28 +34,6 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
           await _createIndexes();
           await _seedProducts();
-        },
-        onUpgrade: (m, from, to) async {
-          if (from < 2) await m.createTable(cashierClosings);
-          if (from < 3) await m.createTable(syncCursors);
-          if (from < 4) {
-            await m.addColumn(products, products.depositPrice);
-            // Backfill existing gallon products with the old default deposit.
-            await (update(products)..where((p) => p.isGallon.equals(true)))
-                .write(const ProductsCompanion(depositPrice: Value(40000)));
-          }
-          if (from < 5) await _createIndexes();
-          if (from < 6) {
-            await m.addColumn(saleItems, saleItems.cogs);
-            // Backfill historical COGS with the master buy price × qty — an
-            // estimate (FIFO lots weren't tracked before), keeps old gross
-            // profit roughly as it was. New sales compute real FIFO cost.
-            await customStatement(
-              'UPDATE sale_items SET cogs = qty_base * '
-              'COALESCE((SELECT buy_price FROM products '
-              'WHERE products.id = sale_items.product_id), 0)',
-            );
-          }
         },
         beforeOpen: (details) async {
           // SQLite disables FK enforcement by default; turn it on so the
