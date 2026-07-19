@@ -94,7 +94,13 @@ class SaleItems extends Table {
   IntColumn get saleId => integer().references(Sales, #id)();
   IntColumn get productId => integer().references(Products, #id)();
   IntColumn get qtyBase => integer()();
-  RealColumn get price => real()();
+  RealColumn get price => real()(); // sell price per base unit
+
+  /// Total COGS for this line, FROZEN at sale time via FIFO over purchase
+  /// lots (oldest stock consumed first, at that lot's buy price). Stored so
+  /// old sales keep the old cost even after buy prices change. Gross profit
+  /// = subtotal - cogs.
+  RealColumn get cogs => real().withDefault(const Constant(0))();
   RealColumn get subtotal => real()();
 }
 

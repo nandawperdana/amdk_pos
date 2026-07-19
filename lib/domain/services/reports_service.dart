@@ -71,9 +71,7 @@ class ReportsService {
   }
 
   /// Summary over [start, end) — any range, a day or a month.
-  /// COGS = product buyPrice × qty sold.
-  /// Note: the per-product lookup in a loop (N+1) is left simple for the
-  /// scaffold — optimize with a JOIN once transaction volume grows.
+  /// COGS = SUM(saleItems.cogs), the FIFO cost frozen at sale time.
   Future<DailySummary> periodSummary(DateTime start, DateTime end) async {
     final sales = await (db.select(db.sales)
           ..where((s) =>
@@ -89,10 +87,7 @@ class ReportsService {
           .get();
       for (final it in items) {
         revenue += it.subtotal;
-        final p = await (db.select(db.products)
-              ..where((p) => p.id.equals(it.productId)))
-            .getSingleOrNull();
-        cogs += (p?.buyPrice ?? 0) * it.qtyBase;
+        cogs += it.cogs;
       }
     }
 
@@ -119,8 +114,8 @@ class ReportsService {
   }
 
   /// Full report over [start, end) with per-product & per-cash-category
-  /// breakdown. The N+1 product lookup is left simple (same as
-  /// periodSummary) — optimize with a JOIN once volume grows.
+  /// breakdown. COGS is the FIFO cost stored per sale item; the per-product
+  /// lookup remains only to resolve the display name (N+1, fine at this size).
   Future<DailyReport> periodReport(DateTime start, DateTime end) async {
     final sales = await (db.select(db.sales)
           ..where((s) =>
@@ -140,15 +135,14 @@ class ReportsService {
         final p = await (db.select(db.products)
               ..where((p) => p.id.equals(it.productId)))
             .getSingleOrNull();
-        final itemCogs = (p?.buyPrice ?? 0) * it.qtyBase;
         revenue += it.subtotal;
-        cogs += itemCogs;
+        cogs += it.cogs;
         final prev = agg[it.productId];
         agg[it.productId] = (
           name: p?.name ?? 'Produk #${it.productId}',
           qty: (prev?.qty ?? 0) + it.qtyBase,
           revenue: (prev?.revenue ?? 0) + it.subtotal,
-          profit: (prev?.profit ?? 0) + (it.subtotal - itemCogs),
+          profit: (prev?.profit ?? 0) + (it.subtotal - it.cogs),
         );
       }
     }

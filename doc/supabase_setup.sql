@@ -62,7 +62,7 @@ create table if not exists sales (
 create table if not exists sale_items (
   device_id text not null, id bigint not null,
   sale_id bigint, product_id bigint, qty_base bigint,
-  price double precision, subtotal double precision,
+  price double precision, cogs double precision, subtotal double precision,
   primary key (device_id, id)
 );
 

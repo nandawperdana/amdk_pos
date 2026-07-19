@@ -58,12 +58,20 @@ class SalesService {
           );
 
       for (final l in lines) {
+        // COGS via FIFO: units already sold before this line consume the
+        // oldest lots, so this line's cost is the NEXT qty units in purchase
+        // order. Computed BEFORE inserting this line's item so the sold-count
+        // reflects only prior lines (incl earlier lines of this same sale).
+        final soldBefore = await _soldQty(l.productId);
+        final cogs = await _fifoCogs(l.productId, soldBefore, l.qtyBase);
+
         await db.into(db.saleItems).insert(
               SaleItemsCompanion.insert(
                 saleId: saleId,
                 productId: l.productId,
                 qtyBase: l.qtyBase,
                 price: l.price,
+                cogs: Value(cogs),
                 subtotal: l.subtotal,
               ),
             );
@@ -110,5 +118,51 @@ class SalesService {
 
       return saleId;
     });
+  }
+
+  /// Total base units of this product sold across ALL sales so far.
+  Future<int> _soldQty(int productId) async {
+    final sum = db.saleItems.qtyBase.sum();
+    final row = await (db.selectOnly(db.saleItems)
+          ..addColumns([sum])
+          ..where(db.saleItems.productId.equals(productId)))
+        .getSingle();
+    return row.read(sum) ?? 0;
+  }
+
+  /// FIFO cost of `qty` units of a product, where `soldBefore` units have
+  /// already been consumed from the oldest lots. Walks purchase lots in
+  /// purchase order; units sold beyond everything ever purchased (stock gone
+  /// negative) fall back to the product's master buy price.
+  Future<double> _fifoCogs(int productId, int soldBefore, int qty) async {
+    final lots = await (db.select(db.purchaseItems)
+          ..where((i) => i.productId.equals(productId))
+          ..orderBy([(i) => OrderingTerm.asc(i.id)]))
+        .get();
+
+    final start = soldBefore, end = soldBefore + qty;
+    double cost = 0;
+    var covered = 0; // units of [start,end) priced from a real lot
+    var cursor = 0; // running cumulative purchased units (lot boundary)
+    for (final lot in lots) {
+      final lotStart = cursor, lotEnd = cursor + lot.qtyBase;
+      cursor = lotEnd;
+      final ovStart = start > lotStart ? start : lotStart;
+      final ovEnd = end < lotEnd ? end : lotEnd;
+      final overlap = ovEnd - ovStart;
+      if (overlap > 0) {
+        cost += overlap * lot.price;
+        covered += overlap;
+      }
+    }
+
+    final uncovered = qty - covered;
+    if (uncovered > 0) {
+      final p = await (db.select(db.products)
+            ..where((t) => t.id.equals(productId)))
+          .getSingleOrNull();
+      cost += uncovered * (p?.buyPrice ?? 0);
+    }
+    return cost;
   }
 }

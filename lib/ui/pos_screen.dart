@@ -23,6 +23,19 @@ final activeProductsProvider = StreamProvider<List<Product>>((ref) {
       .watch();
 });
 
+/// Live stock per product = SUM(StockMovements.qtyBase), grouped. Products
+/// with no movement row are simply absent (treated as stock 0 = habis).
+final stockMapProvider = StreamProvider<Map<int, int>>((ref) {
+  final db = ref.watch(dbProvider);
+  final sum = db.stockMovements.qtyBase.sum();
+  final q = db.selectOnly(db.stockMovements)
+    ..addColumns([db.stockMovements.productId, sum])
+    ..groupBy([db.stockMovements.productId]);
+  return q.watch().map((rows) => {
+        for (final r in rows) r.read(db.stockMovements.productId)!: r.read(sum) ?? 0,
+      });
+});
+
 /// Payment options: stored value + Indonesian display label.
 const _paymentOptions = [
   (value: 'cash', label: 'Tunai'),
@@ -87,7 +100,33 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   // Add to cart
   // ---------------------------------------------------------------------
 
+  // Stock on hand minus whatever is already sitting in the cart for this
+  // product (across all lines/gallon modes) — the true room left to sell.
+  int _stockOf(Product p) =>
+      (ref.read(stockMapProvider).valueOrNull ?? const {})[p.id] ?? 0;
+
+  int _remaining(Product p) =>
+      _stockOf(p) -
+      _cart
+          .where((l) => l.product.id == p.id)
+          .fold(0, (s, l) => s + l.qty);
+
+  /// Same as [_remaining], but pretending [line] isn't in the cart yet — for
+  /// editing an existing line's qty (it shouldn't count against itself).
+  int _remainingExcluding(CartLine line) =>
+      _stockOf(line.product) -
+      _cart
+          .where((l) => l.product.id == line.product.id && l != line)
+          .fold(0, (s, l) => s + l.qty);
+
   void _addProduct(Product p) async {
+    final remaining = _remaining(p);
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Stok ${p.name} habis')));
+      return;
+    }
+
     if (p.isGallon) {
       final line = await _askGallonMode(p);
       if (line == null) return;
@@ -99,7 +138,10 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     // fast +1 tap, so one sale can add a whole dus/lusin in one go.
     if (p.packUnit != null) {
       final qty = await pickQuantity(context,
-          productName: p.name, packUnit: p.packUnit, packSize: p.packSize);
+          productName: p.name,
+          packUnit: p.packUnit,
+          packSize: p.packSize,
+          maxQty: remaining);
       if (qty == null || !mounted) return;
       _mergeIntoCart(p, qty);
       return;
@@ -127,7 +169,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         productName: l.product.name,
         packUnit: l.product.packUnit,
         packSize: l.product.packSize,
-        initialQty: l.qty);
+        initialQty: l.qty,
+        maxQty: _remainingExcluding(l));
     if (qty == null || !mounted) return;
     setState(() => l.qty = qty);
   }
@@ -277,6 +320,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   @override
   Widget build(BuildContext context) {
     final products = ref.watch(activeProductsProvider);
+    final stockAsync = ref.watch(stockMapProvider);
+    final stockMap = stockAsync.valueOrNull ?? const {};
+    final stockLoaded = stockAsync.hasValue;
 
     return Scaffold(
       appBar: AppBar(
@@ -301,11 +347,22 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   maxCrossAxisExtent: 180,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
-                  childAspectRatio: 1.4,
+                  childAspectRatio: 1.25,
                 ),
                 itemCount: list.length,
-                itemBuilder: (_, i) => _ProductButton(
-                    product: list[i], onTap: () => _addProduct(list[i])),
+                itemBuilder: (_, i) {
+                  final p = list[i];
+                  final stock = stockMap[p.id] ?? 0;
+                  // Out of stock → not sellable. Don't block during the
+                  // initial async load (avoids a flash of "Habis").
+                  final soldOut = stockLoaded && stock <= 0;
+                  return _ProductButton(
+                    product: p,
+                    stock: stock,
+                    soldOut: soldOut,
+                    onTap: soldOut ? null : () => _addProduct(p),
+                  );
+                },
               ),
             ),
           ),
@@ -372,7 +429,15 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline),
-                  onPressed: () => setState(() => l.qty++),
+                  onPressed: () {
+                    if (_remaining(l.product) <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content:
+                              Text('Stok ${l.product.name} tidak cukup')));
+                      return;
+                    }
+                    setState(() => l.qty++);
+                  },
                 ),
               ],
             ),
@@ -385,33 +450,54 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
 class _ProductButton extends StatelessWidget {
   final Product product;
-  final VoidCallback onTap;
-  const _ProductButton({required this.product, required this.onTap});
+  final int stock;
+  final bool soldOut;
+  final VoidCallback? onTap; // null = disabled (out of stock)
+  const _ProductButton({
+    required this.product,
+    required this.stock,
+    required this.soldOut,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: product.isGallon ? scheme.primaryContainer : scheme.secondaryContainer,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
+    final base =
+        product.isGallon ? scheme.primaryContainer : scheme.secondaryContainer;
+    return Opacity(
+      opacity: soldOut ? 0.45 : 1,
+      child: Material(
+        color: base,
         borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(product.name,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text(rupiah.format(product.sellPrice),
-                  style: TextStyle(color: scheme.onSurfaceVariant)),
-            ],
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(product.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(rupiah.format(product.sellPrice),
+                    style: TextStyle(color: scheme.onSurfaceVariant)),
+                const SizedBox(height: 2),
+                Text(
+                  soldOut ? 'Habis' : 'stok $stock',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: soldOut ? scheme.error : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

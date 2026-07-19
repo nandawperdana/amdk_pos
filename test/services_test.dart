@@ -480,6 +480,71 @@ void main() {
     expect(period.byProduct.single.qty, 5);
     expect(period.summary.cashIn, p.sellPrice * 5);
   });
+
+  test('FIFO cogs: sale cost comes from oldest lot first, frozen per sale',
+      () async {
+    final purchase = PurchaseService(db, GallonService(db));
+    final sales = SalesService(db, GallonService(db));
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+
+    // Lot 1: 10 units @ 1000. Lot 2 (price changed): 10 units @ 1500.
+    await purchase.recordPurchase(
+        lines: [PurchaseLine(productId: p.id, qtyBase: 10, price: 1000)]);
+    await purchase.recordPurchase(
+        lines: [PurchaseLine(productId: p.id, qtyBase: 10, price: 1500)]);
+
+    // Sell 5: fully inside lot 1 → cogs 5*1000.
+    var saleId = await sales.recordSale(
+        lines: [SaleLine(productId: p.id, qtyBase: 5, price: 9999)]);
+    var item = await (db.select(db.saleItems)
+          ..where((i) => i.saleId.equals(saleId)))
+        .getSingle();
+    expect(item.cogs, 5 * 1000);
+
+    // Sell 8: 5 left in lot 1 (1000) + 3 from lot 2 (1500).
+    saleId = await sales.recordSale(
+        lines: [SaleLine(productId: p.id, qtyBase: 8, price: 9999)]);
+    item = await (db.select(db.saleItems)
+          ..where((i) => i.saleId.equals(saleId)))
+        .getSingle();
+    expect(item.cogs, 5 * 1000 + 3 * 1500);
+
+    // Sell 20 more (only 7 left in lot 2 @1500; 13 uncovered → master buyPrice).
+    saleId = await sales.recordSale(
+        lines: [SaleLine(productId: p.id, qtyBase: 20, price: 9999)]);
+    item = await (db.select(db.saleItems)
+          ..where((i) => i.saleId.equals(saleId)))
+        .getSingle();
+    expect(item.cogs, 7 * 1500 + 13 * p.buyPrice);
+
+    // Old sales keep their OLD cost even though later lots priced differently.
+    final firstItem = await (db.select(db.saleItems)
+          ..where((i) => i.saleId.equals(saleId - 2)))
+        .getSingle();
+    expect(firstItem.cogs, 5 * 1000);
+  });
+
+  test('stock: purchase raises stock, sale lowers it; report profit uses '
+      'FIFO cogs not master buyPrice', () async {
+    final purchase = PurchaseService(db, GallonService(db));
+    final sales = SalesService(db, GallonService(db));
+    final reports = ReportsService(db);
+    final p = await (db.select(db.products)..limit(1)).getSingle();
+
+    await purchase.recordPurchase(
+        lines: [PurchaseLine(productId: p.id, qtyBase: 4, price: 1000)]);
+    expect(await db.stockOf(p.id), 4);
+
+    await sales.recordSale(
+        lines: [SaleLine(productId: p.id, qtyBase: 4, price: 2000)]);
+    expect(await db.stockOf(p.id), 0);
+
+    // Master buyPrice never touched by purchase/sale — profit must come from
+    // the FIFO-priced lot (1000), not whatever buyPrice happens to be.
+    final summary = await reports.dailySummary(DateTime.now());
+    expect(summary.revenue, 4 * 2000);
+    expect(summary.grossProfit, 4 * 2000 - 4 * 1000);
+  });
 }
 
 /// Gallon service that fails the new-sale step, to test transaction rollback.

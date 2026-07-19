@@ -242,8 +242,9 @@ class Product extends DataClass implements Insertable<Product> {
   /// flows through GallonLedger.
   final bool isGallon;
 
-  /// Container deposit per unit, set per gallon product (0 for non-gallon).
-  /// Used at POS when selling a gallon to a new customer.
+  /// Container price per unit, set per gallon product (0 for non-gallon).
+  /// Added to sellPrice when selling a brand-new gallon (water + container,
+  /// one price, no deposit/refund).
   final double depositPrice;
   final bool active;
   const Product(
@@ -2199,6 +2200,13 @@ class $SaleItemsTable extends SaleItems
   late final GeneratedColumn<double> price = GeneratedColumn<double>(
       'price', aliasedName, false,
       type: DriftSqlType.double, requiredDuringInsert: true);
+  static const VerificationMeta _cogsMeta = const VerificationMeta('cogs');
+  @override
+  late final GeneratedColumn<double> cogs = GeneratedColumn<double>(
+      'cogs', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   static const VerificationMeta _subtotalMeta =
       const VerificationMeta('subtotal');
   @override
@@ -2207,7 +2215,7 @@ class $SaleItemsTable extends SaleItems
       type: DriftSqlType.double, requiredDuringInsert: true);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, saleId, productId, qtyBase, price, subtotal];
+      [id, saleId, productId, qtyBase, price, cogs, subtotal];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2245,6 +2253,10 @@ class $SaleItemsTable extends SaleItems
     } else if (isInserting) {
       context.missing(_priceMeta);
     }
+    if (data.containsKey('cogs')) {
+      context.handle(
+          _cogsMeta, cogs.isAcceptableOrUnknown(data['cogs']!, _cogsMeta));
+    }
     if (data.containsKey('subtotal')) {
       context.handle(_subtotalMeta,
           subtotal.isAcceptableOrUnknown(data['subtotal']!, _subtotalMeta));
@@ -2270,6 +2282,8 @@ class $SaleItemsTable extends SaleItems
           .read(DriftSqlType.int, data['${effectivePrefix}qty_base'])!,
       price: attachedDatabase.typeMapping
           .read(DriftSqlType.double, data['${effectivePrefix}price'])!,
+      cogs: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}cogs'])!,
       subtotal: attachedDatabase.typeMapping
           .read(DriftSqlType.double, data['${effectivePrefix}subtotal'])!,
     );
@@ -2287,6 +2301,12 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
   final int productId;
   final int qtyBase;
   final double price;
+
+  /// Total COGS for this line, FROZEN at sale time via FIFO over purchase
+  /// lots (oldest stock consumed first, at that lot's buy price). Stored so
+  /// old sales keep the old cost even after buy prices change. Gross profit
+  /// = subtotal - cogs.
+  final double cogs;
   final double subtotal;
   const SaleItem(
       {required this.id,
@@ -2294,6 +2314,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       required this.productId,
       required this.qtyBase,
       required this.price,
+      required this.cogs,
       required this.subtotal});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2303,6 +2324,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
     map['product_id'] = Variable<int>(productId);
     map['qty_base'] = Variable<int>(qtyBase);
     map['price'] = Variable<double>(price);
+    map['cogs'] = Variable<double>(cogs);
     map['subtotal'] = Variable<double>(subtotal);
     return map;
   }
@@ -2314,6 +2336,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       productId: Value(productId),
       qtyBase: Value(qtyBase),
       price: Value(price),
+      cogs: Value(cogs),
       subtotal: Value(subtotal),
     );
   }
@@ -2327,6 +2350,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       productId: serializer.fromJson<int>(json['productId']),
       qtyBase: serializer.fromJson<int>(json['qtyBase']),
       price: serializer.fromJson<double>(json['price']),
+      cogs: serializer.fromJson<double>(json['cogs']),
       subtotal: serializer.fromJson<double>(json['subtotal']),
     );
   }
@@ -2339,6 +2363,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       'productId': serializer.toJson<int>(productId),
       'qtyBase': serializer.toJson<int>(qtyBase),
       'price': serializer.toJson<double>(price),
+      'cogs': serializer.toJson<double>(cogs),
       'subtotal': serializer.toJson<double>(subtotal),
     };
   }
@@ -2349,6 +2374,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
           int? productId,
           int? qtyBase,
           double? price,
+          double? cogs,
           double? subtotal}) =>
       SaleItem(
         id: id ?? this.id,
@@ -2356,6 +2382,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
         productId: productId ?? this.productId,
         qtyBase: qtyBase ?? this.qtyBase,
         price: price ?? this.price,
+        cogs: cogs ?? this.cogs,
         subtotal: subtotal ?? this.subtotal,
       );
   SaleItem copyWithCompanion(SaleItemsCompanion data) {
@@ -2365,6 +2392,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       productId: data.productId.present ? data.productId.value : this.productId,
       qtyBase: data.qtyBase.present ? data.qtyBase.value : this.qtyBase,
       price: data.price.present ? data.price.value : this.price,
+      cogs: data.cogs.present ? data.cogs.value : this.cogs,
       subtotal: data.subtotal.present ? data.subtotal.value : this.subtotal,
     );
   }
@@ -2377,6 +2405,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
           ..write('productId: $productId, ')
           ..write('qtyBase: $qtyBase, ')
           ..write('price: $price, ')
+          ..write('cogs: $cogs, ')
           ..write('subtotal: $subtotal')
           ..write(')'))
         .toString();
@@ -2384,7 +2413,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
 
   @override
   int get hashCode =>
-      Object.hash(id, saleId, productId, qtyBase, price, subtotal);
+      Object.hash(id, saleId, productId, qtyBase, price, cogs, subtotal);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2394,6 +2423,7 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
           other.productId == this.productId &&
           other.qtyBase == this.qtyBase &&
           other.price == this.price &&
+          other.cogs == this.cogs &&
           other.subtotal == this.subtotal);
 }
 
@@ -2403,6 +2433,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
   final Value<int> productId;
   final Value<int> qtyBase;
   final Value<double> price;
+  final Value<double> cogs;
   final Value<double> subtotal;
   const SaleItemsCompanion({
     this.id = const Value.absent(),
@@ -2410,6 +2441,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     this.productId = const Value.absent(),
     this.qtyBase = const Value.absent(),
     this.price = const Value.absent(),
+    this.cogs = const Value.absent(),
     this.subtotal = const Value.absent(),
   });
   SaleItemsCompanion.insert({
@@ -2418,6 +2450,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     required int productId,
     required int qtyBase,
     required double price,
+    this.cogs = const Value.absent(),
     required double subtotal,
   })  : saleId = Value(saleId),
         productId = Value(productId),
@@ -2430,6 +2463,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     Expression<int>? productId,
     Expression<int>? qtyBase,
     Expression<double>? price,
+    Expression<double>? cogs,
     Expression<double>? subtotal,
   }) {
     return RawValuesInsertable({
@@ -2438,6 +2472,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
       if (productId != null) 'product_id': productId,
       if (qtyBase != null) 'qty_base': qtyBase,
       if (price != null) 'price': price,
+      if (cogs != null) 'cogs': cogs,
       if (subtotal != null) 'subtotal': subtotal,
     });
   }
@@ -2448,6 +2483,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
       Value<int>? productId,
       Value<int>? qtyBase,
       Value<double>? price,
+      Value<double>? cogs,
       Value<double>? subtotal}) {
     return SaleItemsCompanion(
       id: id ?? this.id,
@@ -2455,6 +2491,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
       productId: productId ?? this.productId,
       qtyBase: qtyBase ?? this.qtyBase,
       price: price ?? this.price,
+      cogs: cogs ?? this.cogs,
       subtotal: subtotal ?? this.subtotal,
     );
   }
@@ -2477,6 +2514,9 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     if (price.present) {
       map['price'] = Variable<double>(price.value);
     }
+    if (cogs.present) {
+      map['cogs'] = Variable<double>(cogs.value);
+    }
     if (subtotal.present) {
       map['subtotal'] = Variable<double>(subtotal.value);
     }
@@ -2491,6 +2531,7 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
           ..write('productId: $productId, ')
           ..write('qtyBase: $qtyBase, ')
           ..write('price: $price, ')
+          ..write('cogs: $cogs, ')
           ..write('subtotal: $subtotal')
           ..write(')'))
         .toString();
@@ -3068,7 +3109,7 @@ class CashEntry extends DataClass implements Insertable<CashEntry> {
   final String direction;
   final double amount;
 
-  /// 'sale' | 'purchase' | 'expense' | 'capital' | 'drawing' | 'gallon_deposit'
+  /// 'sale' | 'purchase' | 'expense' | 'capital' | 'drawing'
   /// | 'adjustment' (cashier-closing difference, see CashierClosings)
   final String category;
 
@@ -3536,7 +3577,7 @@ class GallonLedgerData extends DataClass
   final int id;
   final DateTime date;
 
-  /// 'restock' | 'sale_exchange' | 'sale_new' | 'deposit_return' | 'adjustment'
+  /// 'restock' | 'sale_exchange' | 'sale_new' | 'adjustment'
   final String type;
   final int dFull;
   final int dEmpty;
@@ -5560,6 +5601,7 @@ typedef $$SaleItemsTableCreateCompanionBuilder = SaleItemsCompanion Function({
   required int productId,
   required int qtyBase,
   required double price,
+  Value<double> cogs,
   required double subtotal,
 });
 typedef $$SaleItemsTableUpdateCompanionBuilder = SaleItemsCompanion Function({
@@ -5568,6 +5610,7 @@ typedef $$SaleItemsTableUpdateCompanionBuilder = SaleItemsCompanion Function({
   Value<int> productId,
   Value<int> qtyBase,
   Value<double> price,
+  Value<double> cogs,
   Value<double> subtotal,
 });
 
@@ -5594,6 +5637,9 @@ class $$SaleItemsTableFilterComposer
 
   ColumnFilters<double> get price => $composableBuilder(
       column: $table.price, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get cogs => $composableBuilder(
+      column: $table.cogs, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<double> get subtotal => $composableBuilder(
       column: $table.subtotal, builder: (column) => ColumnFilters(column));
@@ -5623,6 +5669,9 @@ class $$SaleItemsTableOrderingComposer
   ColumnOrderings<double> get price => $composableBuilder(
       column: $table.price, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<double> get cogs => $composableBuilder(
+      column: $table.cogs, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<double> get subtotal => $composableBuilder(
       column: $table.subtotal, builder: (column) => ColumnOrderings(column));
 }
@@ -5650,6 +5699,9 @@ class $$SaleItemsTableAnnotationComposer
 
   GeneratedColumn<double> get price =>
       $composableBuilder(column: $table.price, builder: (column) => column);
+
+  GeneratedColumn<double> get cogs =>
+      $composableBuilder(column: $table.cogs, builder: (column) => column);
 
   GeneratedColumn<double> get subtotal =>
       $composableBuilder(column: $table.subtotal, builder: (column) => column);
@@ -5683,6 +5735,7 @@ class $$SaleItemsTableTableManager extends RootTableManager<
             Value<int> productId = const Value.absent(),
             Value<int> qtyBase = const Value.absent(),
             Value<double> price = const Value.absent(),
+            Value<double> cogs = const Value.absent(),
             Value<double> subtotal = const Value.absent(),
           }) =>
               SaleItemsCompanion(
@@ -5691,6 +5744,7 @@ class $$SaleItemsTableTableManager extends RootTableManager<
             productId: productId,
             qtyBase: qtyBase,
             price: price,
+            cogs: cogs,
             subtotal: subtotal,
           ),
           createCompanionCallback: ({
@@ -5699,6 +5753,7 @@ class $$SaleItemsTableTableManager extends RootTableManager<
             required int productId,
             required int qtyBase,
             required double price,
+            Value<double> cogs = const Value.absent(),
             required double subtotal,
           }) =>
               SaleItemsCompanion.insert(
@@ -5707,6 +5762,7 @@ class $$SaleItemsTableTableManager extends RootTableManager<
             productId: productId,
             qtyBase: qtyBase,
             price: price,
+            cogs: cogs,
             subtotal: subtotal,
           ),
           withReferenceMapper: (p0) => p0
