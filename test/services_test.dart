@@ -11,6 +11,7 @@ import 'package:amdk_pos/domain/services/stock_take_service.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   late AppDatabase db;
@@ -264,6 +265,22 @@ void main() {
     final sync = SyncService(db, deviceId: 'dev-test'); // client null
     expect(sync.enabled, isFalse);
     expect(await sync.pushPending(), 0);
+  });
+
+  test('sync: dueForAutoSync true when never synced or stale, false within 24h',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final sync = SyncService(db, deviceId: 'dev-test', prefs: prefs);
+
+    expect(sync.dueForAutoSync, isTrue); // never synced
+
+    await prefs.setInt('last_sync_at', DateTime.now().millisecondsSinceEpoch);
+    expect(sync.dueForAutoSync, isFalse); // just synced, within 24h
+
+    final twoDaysAgo = DateTime.now().subtract(const Duration(days: 2));
+    await prefs.setInt('last_sync_at', twoDaysAgo.millisecondsSinceEpoch);
+    expect(sync.dueForAutoSync, isTrue); // stale, due again
   });
 
   test('credit sale: no cash in, revenue still counts, receivable tracked',

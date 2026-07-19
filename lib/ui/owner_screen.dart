@@ -5,8 +5,9 @@ import '../providers.dart';
 import 'app_drawer.dart';
 import 'pos_screen.dart' show rupiah;
 
-/// Today's summary. Phase 2: read from the cloud (Supabase) — for now still
-/// from the local DB, enough to verify the flow on a single phone.
+/// Today's summary — reads the LOCAL db, which on the owner's own separate
+/// phone is a pulled-down mirror of the cashier's data (see [OwnerScreen]),
+/// so this works offline once a pull has happened at least once.
 final ownerSummaryProvider = FutureProvider.autoDispose((ref) async {
   final db = ref.watch(dbProvider);
   final reports = ref.watch(reportsServiceProvider);
@@ -16,22 +17,76 @@ final ownerSummaryProvider = FutureProvider.autoDispose((ref) async {
   return (summary: summary, gallon: gallon, cash: cash);
 });
 
-class OwnerScreen extends ConsumerWidget {
+/// The owner's device never writes transactional data itself (no POS/
+/// kulakan there) — it only PULLS from Supabase into its own local mirror,
+/// then reads reports off that local copy exactly like the cashier does.
+/// Offline-capable: once pulled at least once, reports work with no network.
+class OwnerScreen extends ConsumerStatefulWidget {
   const OwnerScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OwnerScreen> createState() => _OwnerScreenState();
+}
+
+class _OwnerScreenState extends ConsumerState<OwnerScreen> {
+  bool _pulling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Once per app open, pull if a day has passed since the last pull (same
+    // cadence/bookkeeping as the cashier's auto-push — separate devices,
+    // separate SharedPreferences, no collision).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoPull());
+  }
+
+  Future<void> _maybeAutoPull() async {
+    final sync = ref.read(syncServiceProvider);
+    if (!sync.enabled || !sync.dueForAutoSync) return;
+    await _pull(silent: true);
+  }
+
+  Future<void> _pull({bool silent = false}) async {
+    final sync = ref.read(syncServiceProvider);
+    if (!sync.enabled) {
+      ref.invalidate(ownerSummaryProvider);
+      return;
+    }
+    setState(() => _pulling = true);
+    try {
+      final n = await sync.pullUpdates();
+      ref.invalidate(ownerSummaryProvider);
+      if (mounted && (!silent || n > 0)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Tarik data: $n baris diperbarui')));
+      }
+    } catch (e) {
+      if (mounted && !silent) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Gagal tarik data: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _pulling = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final data = ref.watch(ownerSummaryProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Owner — Hari Ini'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Muat ulang',
-            onPressed: () => ref.invalidate(ownerSummaryProvider),
+            tooltip: 'Tarik data terbaru dari cloud',
+            icon: _pulling
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.refresh),
+            onPressed: _pulling ? null : () => _pull(),
           ),
-          if (ref.watch(syncServiceProvider).enabled) const SyncButton(),
         ],
       ),
       drawer: const AppDrawer(),
@@ -65,8 +120,8 @@ class OwnerScreen extends ConsumerWidget {
       );
 }
 
-/// Cloud push-sync button. Shown only when Supabase credentials exist.
-/// Available on both roles (the cashier device holds the source-of-truth data).
+/// Cloud push-sync button — cashier only (the device that holds the
+/// source-of-truth data and is the only one that should ever push).
 class SyncButton extends ConsumerStatefulWidget {
   const SyncButton({super.key});
 

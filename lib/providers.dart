@@ -81,6 +81,7 @@ final syncServiceProvider = Provider((ref) => SyncService(
       ref.watch(dbProvider),
       deviceId: _deviceId(ref.watch(prefsProvider)),
       client: ref.watch(syncClientProvider),
+      prefs: ref.watch(prefsProvider),
     ));
 
 /// Stable per-install device id (for the Postgres mirror PK). Created once.

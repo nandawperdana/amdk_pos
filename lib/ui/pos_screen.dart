@@ -59,6 +59,30 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
   double get _total => _cart.fold(0, (s, l) => s + l.subtotal);
 
+  @override
+  void initState() {
+    super.initState();
+    // Cashier device holds the source-of-truth data — check once per app
+    // open whether a day has passed since the last push, and if so sync
+    // quietly in the background (no daemon/WorkManager needed).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoSync());
+  }
+
+  Future<void> _maybeAutoSync() async {
+    final sync = ref.read(syncServiceProvider);
+    if (!sync.enabled || !sync.dueForAutoSync) return;
+    try {
+      final n = await sync.pushPending();
+      if (mounted && n > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Auto-sync: $n baris terkirim ke cloud')));
+      }
+    } catch (_) {
+      // Silent — a background sync hiccup shouldn't block the cashier; the
+      // manual Sync button in the AppBar still works if noticed missing.
+    }
+  }
+
   // ---------------------------------------------------------------------
   // Add to cart
   // ---------------------------------------------------------------------

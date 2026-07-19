@@ -1,37 +1,64 @@
 import 'package:drift/drift.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../database/database.dart';
 
-/// Offline-first, PUSH-ONLY sync from the cashier to Supabase (Postgres).
+/// Offline-first sync between the cashier's local DB and Supabase (Postgres).
 ///
-/// Two kinds of table need two strategies:
+/// Two directions, used by two different roles:
 ///
-/// * LEDGER tables are append-only with IMMUTABLE rows. Sync just sends new
-///   rows, tracked by a per-table high-water mark (lastId) in [SyncCursors].
-///   Upsert with `ignoreDuplicates` (on conflict do nothing) — re-sending is
-///   safe. No per-row flag, no mutation of ledger rows.
+/// * PUSH (cashier device, [pushPending]) — the cashier writes locally and
+///   is the source of truth; it pushes new rows up. Two kinds of table need
+///   two strategies:
+///   - LEDGER tables are append-only with IMMUTABLE rows. Sync just sends new
+///     rows, tracked by a per-table high-water mark (lastId) in
+///     [SyncCursors]. Upsert with `ignoreDuplicates` (on conflict do nothing)
+///     — re-sending is safe. No per-row flag, no mutation of ledger rows.
+///   - MASTER tables (products, customers, suppliers) are MUTABLE — a
+///     product's price is edited, a product is soft-deleted (active=0). A
+///     high-water cursor would never re-send an edited row, so the cloud
+///     would go stale. These are small, so we re-push ALL rows every sync
+///     with a MERGE upsert (overwrite on conflict).
 ///
-/// * MASTER tables (products, customers, suppliers) are MUTABLE — a product's
-///   price is edited, a product is soft-deleted (active=0). A high-water
-///   cursor would never re-send an edited row, so the cloud would go stale.
-///   These are small, so we re-push ALL rows every sync with a MERGE upsert
-///   (overwrite on conflict).
+/// * PULL (owner's separate phone, [pullUpdates]) — the owner's device never
+///   writes transactional data itself; it pulls the cashier's data down into
+///   its OWN local mirror so `ReportsService` etc. can run unmodified against
+///   it, offline-capable once pulled. Ledger tables pull cursor-based
+///   (`pull_<table>` cursor, distinct from the push cursor so both can live
+///   in the same [SyncCursors] table without clashing); master tables pull a
+///   full replace each time. `device_id` is stripped on the way in — the
+///   local schema doesn't have that column, it only exists in the Postgres
+///   mirror to separate devices.
 ///
-/// Idempotent: the Postgres mirror has PK `(device_id, id)`. The local id is
-/// unique per device; `device_id` separates devices for future multi-store.
-///
-/// The owner phone only READS reports from Postgres → no concurrent writes.
+/// Idempotent both ways: the Postgres mirror has PK `(device_id, id)`.
 ///
 /// Postgres setup: see `doc/supabase_setup.sql`.
 class SyncService {
   final AppDatabase db;
   final String deviceId;
   final SupabaseClient? client; // null → sync disabled (offline only)
+  final SharedPreferences? prefs; // last-auto-sync bookkeeping (optional)
 
-  SyncService(this.db, {required this.deviceId, this.client});
+  SyncService(this.db, {required this.deviceId, this.client, this.prefs});
 
   bool get enabled => client != null;
+
+  static const _lastSyncKey = 'last_sync_at';
+
+  DateTime? get lastSyncAt {
+    final ms = prefs?.getInt(_lastSyncKey);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  /// True once a day has passed since the last successful push (or it never
+  /// ran) — checked on app launch so the cashier device stays current
+  /// without a background service/WorkManager.
+  bool get dueForAutoSync {
+    final last = lastSyncAt;
+    return last == null ||
+        DateTime.now().difference(last) >= const Duration(hours: 24);
+  }
 
   /// Append-only ledgers: cursor-based, ignore-duplicates (rows immutable).
   List<TableInfo> get _ledgerTables => [
@@ -120,6 +147,77 @@ class SyncService {
       pushed += rows.length;
     }
 
+    await prefs?.setInt(_lastSyncKey, DateTime.now().millisecondsSinceEpoch);
     return pushed;
+  }
+
+  /// Pull updates from Supabase into the LOCAL mirror — for the owner's
+  /// device, which never writes transactional data itself. Master tables:
+  /// full replace each pull (small, may have edits). Ledger tables:
+  /// cursor-based, append-only (immutable rows, safe to just insert new
+  /// ones). No-op if sync is disabled. Returns the number of rows pulled.
+  Future<int> pullUpdates() async {
+    final c = client;
+    if (c == null) return 0;
+
+    var pulled = 0;
+
+    // Master data: full replace (edits/soft-deletes must propagate down too).
+    for (final table in _masterTables) {
+      final rows = await c.from(table.actualTableName).select();
+      for (final row in rows) {
+        await _upsertLocal(table, row);
+      }
+      pulled += rows.length;
+    }
+
+    // Ledgers: cursor-based, paginated, ascending.
+    for (final table in _ledgerTables) {
+      final name = table.actualTableName;
+      final cursorKey = 'pull_$name';
+      while (true) {
+        final cursor = await _cursor(cursorKey);
+        final rows = await c
+            .from(name)
+            .select()
+            .gt('id', cursor)
+            .order('id')
+            .limit(500);
+        if (rows.isEmpty) break;
+        for (final row in rows) {
+          await _upsertLocal(table, row);
+        }
+        final maxId =
+            rows.map((r) => _asInt(r['id'])).reduce((a, b) => a > b ? a : b);
+        await _setCursor(cursorKey, maxId);
+        pulled += rows.length;
+        if (rows.length < 500) break;
+      }
+    }
+
+    await prefs?.setInt(_lastSyncKey, DateTime.now().millisecondsSinceEpoch);
+    return pulled;
+  }
+
+  /// Postgres sends bigint columns (id, epoch dates) as JSON strings to
+  /// avoid precision loss — coerce them back to int before binding into
+  /// SQLite (which stores the very same raw encoding locally).
+  dynamic _coerce(dynamic v) => v is String && int.tryParse(v) != null
+      ? int.parse(v)
+      : v;
+
+  int _asInt(dynamic v) => v is int ? v : int.parse(v as String);
+
+  /// Insert-or-replace one pulled row into the local table, stripping
+  /// `device_id` (only exists in the Postgres mirror) and coercing
+  /// bigint-as-string values back to int.
+  Future<void> _upsertLocal(TableInfo table, Map<String, dynamic> row) async {
+    final data = Map<String, dynamic>.from(row)..remove('device_id');
+    final columns = data.keys.map((k) => '"$k"').join(', ');
+    final placeholders = List.filled(data.length, '?').join(', ');
+    await db.customStatement(
+      'INSERT OR REPLACE INTO "${table.actualTableName}" ($columns) VALUES ($placeholders)',
+      data.values.map(_coerce).toList(),
+    );
   }
 }
