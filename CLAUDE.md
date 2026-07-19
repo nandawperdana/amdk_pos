@@ -148,8 +148,19 @@ SELESAI di Fase 2:
 - Sinkronisasi cloud — project Supabase aktif, `doc/supabase_setup.sql`
   dijalankan, live round-trip terverifikasi (push idempotent, master
   full-merge vs ledger cursor-based, nol duplikat). Jalankan dengan
-  `fvm flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`
-  (nilai kredensial di catatan pribadi owner, bukan di repo).
+  `fvm flutter run --dart-define=APP_ENV=dev --dart-define=SUPABASE_URL=...
+  --dart-define=SUPABASE_ANON_KEY=...` (nilai kredensial di catatan pribadi
+  owner, bukan di repo).
+- **Pisah kredensial dev vs prod** — `main.dart` const `appEnv`/`isProdEnv`
+  dari `--dart-define=APP_ENV=dev|prod`, default `dev` (lupa set flag =
+  gagal KELIHATAN, bukan diam-diam nganggep prod). Badge "DEV" muncul di
+  header nav drawer kalau `appEnv != 'prod'`. Build prod WAJIB pasang
+  `APP_ENV=prod` + kredensial project Supabase prod eksplisit.
+  **PENTING**: project Supabase yang dipakai sepanjang sesi testing/dev
+  sejauh ini (live round-trip di atas) berisi data uji-coba, bukan data
+  toko asli — perlakukan sebagai project DEV. Owner perlu bikin project
+  Supabase BARU yang bersih khusus buat PROD sebelum APK dipasang di toko
+  beneran (jalankan ulang `doc/supabase_setup.sql` di project baru itu).
 - Laba-rugi & arus kas periode — `ReportsService.periodSummary/periodReport
   (start, end)`, `dailySummary/dailyReport` jadi wrapper single-day.
   `lib/ui/daily_report_screen.dart` (layar "Laporan"): preset Hari ini/
@@ -192,12 +203,39 @@ Owner minta beberapa penyesuaian. P0 (rework galon) & P1 sudah selesai:
   diminta ulang tiap sesi masuk Owner, bukan cuma sekali seumur hidup app.
   Tanpa alur lupa-PIN (clear data/reinstall kalau lupa — cukup untuk toko
   tunggal, satu owner).
+- **Auto-sync harian** — `SyncService.dueForAutoSync`/`lastSyncAt` (cek
+  timestamp di SharedPreferences, bukan daemon/WorkManager). Kasir
+  (`pos_screen.dart` `initState`) cek sekali tiap app dibuka: kalau >24 jam
+  sejak sync sukses terakhir (atau belum pernah), push otomatis diam-diam
+  (gagal = silent, tombol Sync manual di AppBar tetap ada buat jaga-jaga).
+  Timestamp disetel ulang tiap `pushPending()` sukses.
+- **Owner baca laporan dari cloud (offline-capable, HP terpisah)** —
+  `SyncService.pullUpdates()`: arah kebalikan dari push. Master (produk/
+  supplier/customer) full-replace tiap pull; ledger cursor-based pakai key
+  `pull_<table>` (beda dari cursor push `<table>`, jadi aman di
+  `SyncCursors` yang sama). `device_id` dibuang pas masuk (kolom itu cuma
+  ada di mirror Postgres). Owner (`owner_screen.dart`, kini
+  `ConsumerStatefulWidget`) auto-pull sekali/hari di `initState` (gantian
+  cadence sama seperti auto-push kasir, prefs terpisah per device jadi
+  aman) + tombol refresh manual (icon sama, ganti fungsi jadi pull lalu
+  invalidate `ownerSummaryProvider`). `ReportsService`/`gallonBalance`/
+  `cashBalance` DIPAKAI ULANG tanpa ubah — jalan dari DB lokal yang
+  sekarang adalah cermin hasil pull di HP owner, makanya offline-capable
+  begitu pernah pull sekali.
+  **PENTING — batasan operasional**: HP owner yang terpisah dari kasir
+  HANYA boleh dipakai buat lihat laporan (read-only by convention, bukan
+  dipaksa di level kode). JANGAN pakai Kulakan/Tutup Kasir/dsb dari HP
+  owner terpisah itu — tulisannya cuma nyangkut lokal di HP itu doang,
+  TIDAK PERNAH ke-push (owner tidak punya `SyncButton`/push), jadi bikin
+  angka beda sama kasir tanpa ketahuan. Kulakan (meski menunya di Owner)
+  tetap harus dikerjakan di device kasir (switch ke mode Owner di device
+  itu kalau perlu) — bukan di HP pribadi owner. Ini technical debt yang
+  perlu solusi lebih baku (mis. flag "primary device") kalau jadi masalah
+  nyata; untuk sekarang cukup didokumentasikan sebagai batasan pemakaian.
 
 Sisa BELUM dikerjakan, urutan disarankan:
 
-- **P2**: pisah kredensial Supabase dev vs prod; release APK ber-signature;
-  owner baca laporan dari cloud (offline-capable — bukan cuma DB lokal,
-  supaya bisa dipasang di HP owner terpisah dari kasir); auto-sync harian.
+- **P2**: release APK ber-signature.
 - **P3** (Fase 3 lama): antar galon, langganan galon bulanan, multi-toko,
   analitik — lihat bagian Roadmap di atas.
 
