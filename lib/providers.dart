@@ -14,6 +14,7 @@ import 'domain/services/party_service.dart';
 import 'domain/services/pin_service.dart';
 import 'domain/services/product_import_service.dart';
 import 'domain/services/product_service.dart';
+import 'domain/services/store_settings_service.dart';
 import 'domain/services/purchase_service.dart';
 import 'domain/services/reports_service.dart';
 import 'domain/services/sales_service.dart';
@@ -50,6 +51,8 @@ final partyServiceProvider =
     Provider((ref) => PartyService(ref.watch(dbProvider)));
 final pinServiceProvider =
     Provider((ref) => PinService(ref.watch(prefsProvider)));
+final storeSettingsServiceProvider =
+    Provider((ref) => StoreSettingsService(ref.watch(prefsProvider)));
 
 /// Live customer & supplier lists (for pickers), by name.
 final customersProvider = StreamProvider<List<Customer>>((ref) {
@@ -138,3 +141,21 @@ final roleProvider = NotifierProvider<RoleNotifier, AppRole?>(RoleNotifier.new);
 /// — resets on cold start and whenever the role is switched away, so Owner
 /// always needs the PIN again on the next entry).
 final ownerUnlockedProvider = StateProvider<bool>((ref) => false);
+
+// --- Store name ----------------------------------------------------------
+
+/// Store name shown in the drawer header, role-picker splash, and daily
+/// report header. Local-only (SharedPreferences via [StoreSettingsService]),
+/// not synced to Supabase.
+class StoreNameNotifier extends Notifier<String> {
+  @override
+  String build() => ref.watch(storeSettingsServiceProvider).name;
+
+  Future<void> setName(String name) async {
+    await ref.read(storeSettingsServiceProvider).setName(name);
+    state = name;
+  }
+}
+
+final storeNameProvider =
+    NotifierProvider<StoreNameNotifier, String>(StoreNameNotifier.new);
