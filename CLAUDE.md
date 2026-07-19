@@ -232,6 +232,16 @@ Owner minta beberapa penyesuaian. P0 (rework galon) & P1 sudah selesai:
   itu kalau perlu) — bukan di HP pribadi owner. Ini technical debt yang
   perlu solusi lebih baku (mis. flag "primary device") kalau jadi masalah
   nyata; untuk sekarang cukup didokumentasikan sebagai batasan pemakaian.
+- **Stok per barang + COGS FIFO** — barang stok ≤0 tak bisa dijual (grid
+  POS disable + label "Habis", `stockMapProvider` di `pos_screen.dart`,
+  SUM `StockMovements` per produk). `SaleItems.cogs` (schemaVersion 6,
+  backfill data lama = `buyPrice master × qty`) dihitung & DIBEKUKAN saat
+  jual — `SalesService._fifoCogs` jalanin purchase lot (`PurchaseItems`,
+  urut `id`) dari yang PALING LAMA, jadi kalau harga beli kulakan berubah,
+  cuma stok baru yang kepakai harga baru; penjualan lama tetap kekunci ke
+  harga beli lama. `ReportsService` pakai `SUM(saleItems.cogs)`, bukan
+  `product.buyPrice` lagi (buyPrice cuma fallback kalau stok minus/terjual
+  melebihi yang pernah dikulak).
 
 Sisa BELUM dikerjakan, urutan disarankan:
 
