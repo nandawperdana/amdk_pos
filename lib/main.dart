@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'providers.dart';
+import 'ui/owner_pin_gate_screen.dart';
 import 'ui/owner_screen.dart';
 import 'ui/pos_screen.dart';
 import 'ui/role_picker_screen.dart';
@@ -45,6 +46,7 @@ class AmdkPosApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final role = ref.watch(roleProvider);
+    final ownerUnlocked = ref.watch(ownerUnlockedProvider);
     return MaterialApp(
       title: 'AMDK POS',
       debugShowCheckedModeBanner: false,
@@ -59,7 +61,8 @@ class AmdkPosApp extends ConsumerWidget {
       home: switch (role) {
         null => const RolePickerScreen(),
         AppRole.cashier => const PosScreen(),
-        AppRole.owner => const OwnerScreen(),
+        AppRole.owner =>
+          ownerUnlocked ? const OwnerScreen() : const OwnerPinGateScreen(),
       },
     );
   }

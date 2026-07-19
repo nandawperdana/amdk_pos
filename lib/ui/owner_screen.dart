@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
-import 'daily_report_screen.dart';
+import 'app_drawer.dart';
 import 'pos_screen.dart' show rupiah;
 
 /// Today's summary. Phase 2: read from the cloud (Supabase) — for now still
@@ -24,26 +24,17 @@ class OwnerScreen extends ConsumerWidget {
     final data = ref.watch(ownerSummaryProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Owner — Laporan Hari Ini'),
+        title: const Text('Owner — Hari Ini'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.event_note),
-            tooltip: 'Laporan',
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const DailyReportScreen())),
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Muat ulang',
             onPressed: () => ref.invalidate(ownerSummaryProvider),
           ),
           if (ref.watch(syncServiceProvider).enabled) const SyncButton(),
-          IconButton(
-            icon: const Icon(Icons.switch_account),
-            tooltip: 'Ganti Peran',
-            onPressed: () => ref.read(roleProvider.notifier).select(null),
-          ),
         ],
       ),
+      drawer: const AppDrawer(),
       body: data.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Gagal memuat: $e')),

@@ -11,6 +11,7 @@ import 'domain/services/cashier_service.dart';
 import 'domain/services/credit_service.dart';
 import 'domain/services/gallon_service.dart';
 import 'domain/services/party_service.dart';
+import 'domain/services/pin_service.dart';
 import 'domain/services/product_service.dart';
 import 'domain/services/purchase_service.dart';
 import 'domain/services/reports_service.dart';
@@ -44,6 +45,8 @@ final creditServiceProvider =
     Provider((ref) => CreditService(ref.watch(dbProvider)));
 final partyServiceProvider =
     Provider((ref) => PartyService(ref.watch(dbProvider)));
+final pinServiceProvider =
+    Provider((ref) => PinService(ref.watch(prefsProvider)));
 
 /// Live customer & supplier lists (for pickers), by name.
 final customersProvider = StreamProvider<List<Customer>>((ref) {
@@ -126,3 +129,8 @@ class RoleNotifier extends Notifier<AppRole?> {
 }
 
 final roleProvider = NotifierProvider<RoleNotifier, AppRole?>(RoleNotifier.new);
+
+/// Whether the Owner PIN has been verified THIS app session (in-memory only
+/// — resets on cold start and whenever the role is switched away, so Owner
+/// always needs the PIN again on the next entry).
+final ownerUnlockedProvider = StateProvider<bool>((ref) => false);

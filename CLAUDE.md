@@ -103,19 +103,23 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
 **Fase 1 (MVP) TUNTAS** & terverifikasi di emulator (Pixel 7 API 35):
 
 - Peran kasir/owner (`lib/main.dart` — `roleProvider` = `RoleNotifier`,
-  DIPERSIST via shared_preferences; ganti peran dari overflow POS & AppBar
-  Owner).
+  DIPERSIST via shared_preferences; ganti peran dari footer nav drawer,
+  kedua peran).
 - Seed 8 produk saat DB pertama dibuat (`AppDatabase._seedProducts`).
 - POS HP (`lib/ui/pos_screen.dart`) — grid tombol besar, galon wajib pilih
-  isi-ulang/galon-baru (satu harga, tanpa deposit), bayar tunai/qris/transfer.
-  Menu lain di overflow.
+  isi-ulang/galon-baru (satu harga, tanpa deposit), bayar tunai/qris/transfer,
+  jual per pcs/dus (`qty_picker.dart`). Navigasi lain di drawer.
+- Nav drawer (`lib/ui/app_drawer.dart`, `AppDrawer`) — dipakai kasir & owner,
+  isi beda per peran (`roleProvider`); AppBar cuma title + aksi live
+  (Sync/Refresh).
 - Master produk CRUD (`lib/ui/master_product_screen.dart` + `ProductService`) —
   tambah/edit/nonaktif (soft-delete, tak hapus baris); `isGallon` diikat
-  kategori=='gallon'.
+  kategori=='gallon'. Kasir cuma toggle aktif/nonaktif, owner full CRUD.
 - Tutup kasir (`lib/ui/cashier_closing_screen.dart` + `CashierService`) —
   `CashierClosings` append-only + baris penyesuaian selisih (schemaVersion 2).
 - Kulakan/pembelian (`lib/ui/purchase_screen.dart` + `PurchaseService`) —
-  stok masuk, kas keluar, lunas/utang, galon toggle tukar kosong.
+  stok masuk, kas keluar, lunas/utang, galon toggle tukar kosong, jual per
+  pcs/dus. HANYA di menu Owner.
 - Opname/penyesuaian stok (`lib/ui/stock_take_screen.dart` + `StockTakeService`) —
   hitungan fisik per produk + wadah galon; tulis baris SELISIH (append-only).
 - Laporan harian (`lib/ui/daily_report_screen.dart` + `ReportsService.
@@ -158,18 +162,42 @@ SELESAI di Fase 2:
   tile owner "Galon beredar" & menu "Tarik deposit galon" dihapus, field
   opname "beredar" dihapus. Galon baru sekarang satu harga (100% omzet).
 
-## Penyesuaian requirement (P0 selesai, P1+ menunggu prioritas eksekusi)
+## Penyesuaian requirement (P0 & P1 selesai, P2+ menunggu prioritas eksekusi)
 
-Owner minta beberapa penyesuaian; P0 (rework galon di atas) sudah selesai.
-Sisanya BELUM dikerjakan, urutan disarankan:
+Owner minta beberapa penyesuaian. P0 (rework galon) & P1 sudah selesai:
 
-- **P1**: jual per dus/pack di POS & kulakan (skema `packUnit`/`packSize`
-  sudah ada); nav drawer ganti overflow menu; kontrol akses per peran
-  (master produk: kasir cuma enable/disable, owner full; kulakan owner-only).
+- **Jual per dus/pack** (POS & kulakan) — `lib/ui/qty_picker.dart`
+  (`pickQuantity`), dipakai bersama di kedua layar. Produk dengan
+  `packUnit` terisi (mis. gelas/botol dus) buka dialog jumlah+satuan (pcs
+  atau dus) saat ditambah ke keranjang; tap angka qty di keranjang untuk
+  ubah lagi. Produk tanpa `packUnit` tetap tap-cepat +1 (kecepatan input
+  POS tak terganggu).
+- **Nav drawer** ganti overflow menu — `lib/ui/app_drawer.dart`
+  (`AppDrawer`), dipakai kasir & owner. AppBar cuma title + aksi live
+  (Sync/Refresh); semua navigasi (Tutup Kasir, Opname, Piutang & Utang,
+  Master Produk, Kulakan, Laporan) pindah ke drawer. Ganti Peran di footer
+  drawer (dulu di popup menu).
+- **Kontrol akses per peran**:
+  - Master produk: kasir cuma toggle aktif/nonaktif (Switch), tombol
+    tambah/edit disembunyikan (`isOwner` check di
+    `master_product_screen.dart`). Owner tetap full CRUD.
+  - Kulakan: HANYA muncul di drawer Owner, dihapus total dari drawer/menu
+    Kasir.
+- **PIN lokal khusus Owner** (kasir tanpa PIN) —
+  `lib/domain/services/pin_service.dart` (hash SHA-256, bukan plaintext,
+  via `crypto`), `lib/ui/owner_pin_gate_screen.dart`. Pertama kali masuk
+  Owner: buat PIN (min 4 digit + konfirmasi). Berikutnya: wajib verify
+  tiap masuk Owner. `ownerUnlockedProvider` (in-memory, TIDAK dipersist)
+  reset ke `false` tiap kali Ganti Peran atau app baru dibuka — jadi PIN
+  diminta ulang tiap sesi masuk Owner, bukan cuma sekali seumur hidup app.
+  Tanpa alur lupa-PIN (clear data/reinstall kalau lupa — cukup untuk toko
+  tunggal, satu owner).
+
+Sisa BELUM dikerjakan, urutan disarankan:
+
 - **P2**: pisah kredensial Supabase dev vs prod; release APK ber-signature;
   owner baca laporan dari cloud (offline-capable — bukan cuma DB lokal,
-  supaya bisa dipasang di HP owner terpisah dari kasir); auto-sync harian;
-  PIN lokal per peran (kasir/owner) sebagai kredensial akses.
+  supaya bisa dipasang di HP owner terpisah dari kasir); auto-sync harian.
 - **P3** (Fase 3 lama): antar galon, langganan galon bulanan, multi-toko,
   analitik — lihat bagian Roadmap di atas.
 

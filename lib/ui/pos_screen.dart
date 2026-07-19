@@ -7,13 +7,10 @@ import '../data/database/database.dart';
 import '../domain/services/gallon_service.dart';
 import '../domain/services/sales_service.dart';
 import '../main.dart';
-import 'cashier_closing_screen.dart';
-import 'credit_screen.dart';
-import 'master_product_screen.dart';
+import 'app_drawer.dart';
 import 'owner_screen.dart' show SyncButton;
 import 'party_picker.dart';
-import 'purchase_screen.dart';
-import 'stock_take_screen.dart';
+import 'qty_picker.dart';
 
 final rupiah = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
@@ -71,18 +68,44 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       final line = await _askGallonMode(p);
       if (line == null) return;
       setState(() => _cart.add(line));
-    } else {
-      // Same product → bump qty, don't create a new line.
-      final existing = _cart.where(
-          (l) => l.product.id == p.id && l.gallonMode == GallonSaleMode.none);
-      setState(() {
-        if (existing.isNotEmpty) {
-          existing.first.qty++;
-        } else {
-          _cart.add(CartLine(p));
-        }
-      });
+      return;
     }
+
+    // Sold per dus/pack (bottol/gelas) → ask quantity + unit instead of the
+    // fast +1 tap, so one sale can add a whole dus/lusin in one go.
+    if (p.packUnit != null) {
+      final qty = await pickQuantity(context,
+          productName: p.name, packUnit: p.packUnit, packSize: p.packSize);
+      if (qty == null || !mounted) return;
+      _mergeIntoCart(p, qty);
+      return;
+    }
+
+    // Fast path: no pack, tap = +1. Same product → bump qty, don't create a
+    // new line.
+    _mergeIntoCart(p, 1);
+  }
+
+  void _mergeIntoCart(Product p, int qty) {
+    final existing = _cart.where(
+        (l) => l.product.id == p.id && l.gallonMode == GallonSaleMode.none);
+    setState(() {
+      if (existing.isNotEmpty) {
+        existing.first.qty += qty;
+      } else {
+        _cart.add(CartLine(p, qty: qty));
+      }
+    });
+  }
+
+  Future<void> _editQty(CartLine l, int i) async {
+    final qty = await pickQuantity(context,
+        productName: l.product.name,
+        packUnit: l.product.packUnit,
+        packSize: l.product.packSize,
+        initialQty: l.qty);
+    if (qty == null || !mounted) return;
+    setState(() => l.qty = qty);
   }
 
   /// A gallon must pick a mode: exchange (isi ulang, bawa kosong) or new
@@ -237,52 +260,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         actions: [
           // Cashier device holds the source-of-truth data → sync lives here too.
           if (ref.watch(syncServiceProvider).enabled) const SyncButton(),
-          IconButton(
-            icon: const Icon(Icons.add_shopping_cart_outlined),
-            tooltip: 'Kulakan',
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const PurchaseScreen())),
-          ),
-          IconButton(
-            icon: const Icon(Icons.point_of_sale_outlined),
-            tooltip: 'Tutup Kasir',
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const CashierClosingScreen())),
-          ),
-          PopupMenuButton<VoidCallback>(
-            onSelected: (fn) => fn(),
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const MasterProductScreen())),
-                child: const ListTile(
-                    leading: Icon(Icons.inventory_2_outlined),
-                    title: Text('Master Produk')),
-              ),
-              PopupMenuItem(
-                value: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const StockTakeScreen())),
-                child: const ListTile(
-                    leading: Icon(Icons.fact_check_outlined),
-                    title: Text('Opname Stok')),
-              ),
-              PopupMenuItem(
-                value: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const CreditScreen())),
-                child: const ListTile(
-                    leading: Icon(Icons.account_balance_wallet_outlined),
-                    title: Text('Piutang & Utang')),
-              ),
-              PopupMenuItem(
-                value: () => ref.read(roleProvider.notifier).select(null),
-                child: const ListTile(
-                    leading: Icon(Icons.switch_account),
-                    title: Text('Ganti Peran')),
-              ),
-            ],
-          ),
         ],
       ),
+      drawer: const AppDrawer(),
       body: Column(
         children: [
           Expanded(
@@ -358,7 +338,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     l.qty > 1 ? l.qty-- : _cart.removeAt(i);
                   }),
                 ),
-                Text('${l.qty}', style: const TextStyle(fontSize: 18)),
+                InkWell(
+                  onTap: () => _editQty(l, i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text('${l.qty}',
+                        style: const TextStyle(fontSize: 18)),
+                  ),
+                ),
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline),
                   onPressed: () => setState(() => l.qty++),

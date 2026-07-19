@@ -17,19 +17,24 @@ const _categories = [
 String _categoryLabel(String value) =>
     _categories.firstWhere((c) => c.value == value, orElse: () => (value: value, label: value)).label;
 
+/// Master produk dibagi per peran: kasir cuma bisa enable/disable barang
+/// (nyalakan/matikan Switch), tanpa buka form tambah/edit. Owner full akses.
 class MasterProductScreen extends ConsumerWidget {
   const MasterProductScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final products = ref.watch(allProductsProvider);
+    final isOwner = ref.watch(roleProvider) == AppRole.owner;
     return Scaffold(
       appBar: AppBar(title: const Text('Master Produk')),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: const Icon(Icons.add),
-        label: const Text('Produk'),
-        onPressed: () => _openForm(context),
-      ),
+      floatingActionButton: isOwner
+          ? FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('Produk'),
+              onPressed: () => _openForm(context),
+            )
+          : null,
       body: products.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Gagal memuat: $e')),
@@ -53,10 +58,11 @@ class MasterProductScreen extends ConsumerWidget {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () => _openForm(context, p),
-                  ),
+                  if (isOwner)
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _openForm(context, p),
+                    ),
                   Switch(
                     value: p.active,
                     onChanged: (v) => ref
@@ -65,7 +71,7 @@ class MasterProductScreen extends ConsumerWidget {
                   ),
                 ],
               ),
-              onTap: () => _openForm(context, p),
+              onTap: isOwner ? () => _openForm(context, p) : null,
             );
           },
         ),

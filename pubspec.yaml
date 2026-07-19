@@ -23,6 +23,9 @@ dependencies:
   # Persist pilihan peran (kasir/owner) antar buka app.
   shared_preferences: ^2.2.3
 
+  # Hash PIN lokal owner (jangan simpan plaintext).
+  crypto: ^3.0.3
+
   # Sinkronisasi cloud (owner lihat laporan dari HP) — diaktifkan di Fase 2.
   supabase_flutter: ^2.5.6
 

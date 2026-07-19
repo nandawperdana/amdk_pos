@@ -6,6 +6,7 @@ import '../domain/services/purchase_service.dart';
 import '../main.dart';
 import 'party_picker.dart';
 import 'pos_screen.dart' show activeProductsProvider, rupiah;
+import 'qty_picker.dart';
 
 class PurchaseCartLine {
   final Product product;
@@ -13,9 +14,8 @@ class PurchaseCartLine {
   double price; // buy price per base unit
   bool swapEmpty; // gallon only: restock filled with an empty swap
 
-  PurchaseCartLine(this.product)
-      : qty = 1,
-        price = product.buyPrice,
+  PurchaseCartLine(this.product, {this.qty = 1})
+      : price = product.buyPrice,
         swapEmpty = product.isGallon;
 
   double get subtotal => qty * price;
@@ -36,15 +36,38 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
 
   double get _total => _cart.fold(0, (s, l) => s + l.subtotal);
 
-  void _addProduct(Product p) {
+  void _addProduct(Product p) async {
+    // Sold per dus/pack (bottol/gelas) → ask quantity + unit instead of the
+    // fast +1 tap, so one kulakan can add a whole dus/lusin in one go.
+    if (p.packUnit != null) {
+      final qty = await pickQuantity(context,
+          productName: p.name, packUnit: p.packUnit, packSize: p.packSize);
+      if (qty == null || !mounted) return;
+      _mergeIntoCart(p, qty);
+      return;
+    }
+    _mergeIntoCart(p, 1);
+  }
+
+  void _mergeIntoCart(Product p, int qty) {
     final existing = _cart.where((l) => l.product.id == p.id);
     setState(() {
       if (existing.isNotEmpty) {
-        existing.first.qty++;
+        existing.first.qty += qty;
       } else {
-        _cart.add(PurchaseCartLine(p));
+        _cart.add(PurchaseCartLine(p, qty: qty));
       }
     });
+  }
+
+  Future<void> _editQty(PurchaseCartLine l) async {
+    final qty = await pickQuantity(context,
+        productName: l.product.name,
+        packUnit: l.product.packUnit,
+        packSize: l.product.packSize,
+        initialQty: l.qty);
+    if (qty == null || !mounted) return;
+    setState(() => l.qty = qty);
   }
 
   Future<void> _editPrice(PurchaseCartLine l) async {
@@ -280,7 +303,14 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
                           l.qty > 1 ? l.qty-- : _cart.removeAt(i);
                         }),
                       ),
-                      Text('${l.qty}', style: const TextStyle(fontSize: 18)),
+                      InkWell(
+                        onTap: () => _editQty(l),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text('${l.qty}',
+                              style: const TextStyle(fontSize: 18)),
+                        ),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline),
                         onPressed: () => setState(() => l.qty++),
