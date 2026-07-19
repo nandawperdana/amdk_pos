@@ -8,6 +8,7 @@ import 'package:amdk_pos/domain/services/purchase_service.dart';
 import 'package:amdk_pos/domain/services/reports_service.dart';
 import 'package:amdk_pos/domain/services/sales_service.dart';
 import 'package:amdk_pos/domain/services/stock_take_service.dart';
+import 'package:amdk_pos/domain/services/store_settings_service.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -602,6 +603,28 @@ void main() {
     final summary = await reports.dailySummary(DateTime.now());
     expect(summary.revenue, 4 * 2000);
     expect(summary.grossProfit, 4 * 2000 - 4 * 1000);
+  });
+
+  group('StoreSettingsService', () {
+    test('defaults to Tirta POS when never set', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final settings = StoreSettingsService(prefs);
+
+      expect(settings.name, 'Tirta POS');
+    });
+
+    test('setName persists and overrides the default', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final settings = StoreSettingsService(prefs);
+
+      await settings.setName('Tirta Jaya');
+
+      expect(settings.name, 'Tirta Jaya');
+      // A second instance reading the same prefs sees the persisted value.
+      expect(StoreSettingsService(prefs).name, 'Tirta Jaya');
+    });
   });
 }
 
