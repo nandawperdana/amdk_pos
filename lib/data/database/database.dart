@@ -104,9 +104,10 @@ class AppDatabase extends _$AppDatabase {
           // top when selling a brand-new gallon, one price, no deposit)
           p(name: 'Galon Aqua 19L', brand: 'Aqua', category: 'gallon',
               buy: 17000, sell: 20000, isGallon: true, containerPrice: 40000),
-          p(name: 'Galon Le Minerale 15L', brand: 'Le Minerale',
-              category: 'gallon', buy: 15000, sell: 18000, isGallon: true,
-              containerPrice: 40000),
+          // Le Minerale 15L: brand sekali pakai, TIDAK bisa isi ulang —
+          // produk biasa, satu harga (bukan gallon: tanpa container/GallonLedger).
+          p(name: 'Le Minerale 15L', brand: 'Le Minerale', category: 'bottle',
+              buy: 18000, sell: 22000),
           p(name: 'Galon Cleo 19L', brand: 'Cleo', category: 'gallon',
               buy: 16000, sell: 19000, isGallon: true, containerPrice: 40000),
           // Cups (sold per pcs, bought per box)
