@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 /// Ask for a quantity, in pcs or in a pack unit (dus/lusin/etc) if the
-/// product has one. Returns the total in base units (pcs), or null if
+/// product has one. Returns the total in base units (pcs) plus whether the
+/// pack unit was chosen (so the caller can apply the pack price), or null if
 /// cancelled. Used by both POS and kulakan — bottol/gelas sold per dus/pack.
 ///
 /// [maxQty] caps the total (pcs) that can be confirmed — used at POS so a
 /// sale can't exceed stock on hand; left null for kulakan, where there's no
 /// ceiling (a purchase adds stock, it doesn't consume it).
-Future<int?> pickQuantity(
+Future<({int qtyBase, bool asPack})?> pickQuantity(
   BuildContext context, {
   required String productName,
   String? packUnit,
@@ -26,7 +27,7 @@ Future<int?> pickQuantity(
   final controller = TextEditingController(text: '$amount');
   String? error; // hoisted outside the builder so setLocal() persists it
 
-  return showDialog<int>(
+  return showDialog<({int qtyBase, bool asPack})>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setLocal) {
@@ -77,12 +78,13 @@ Future<int?> pickQuantity(
                   setLocal(() => error = 'Jumlah tidak valid');
                   return;
                 }
-                final total = unit == 'pcs' ? n : n * packSize;
+                final asPack = hasPack && unit != 'pcs';
+                final total = asPack ? n * packSize : n;
                 if (maxQty != null && total > maxQty) {
                   setLocal(() => error = 'Melebihi stok ($maxQty pcs)');
                   return;
                 }
-                Navigator.pop(ctx, total);
+                Navigator.pop(ctx, (qtyBase: total, asPack: asPack));
               },
               child: const Text('OK'),
             ),

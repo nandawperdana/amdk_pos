@@ -10,15 +10,28 @@ import 'qty_picker.dart';
 
 class PurchaseCartLine {
   final Product product;
-  int qty;
+  int qty; // base units (pcs)
   double price; // buy price per base unit
   bool swapEmpty; // gallon only: restock filled with an empty swap
+  bool asPack; // bought by the dus → use packBuyPrice
 
-  PurchaseCartLine(this.product, {this.qty = 1})
-      : price = product.buyPrice,
+  PurchaseCartLine(this.product, {this.qty = 1, this.asPack = false})
+      : price = asPack && product.packBuyPrice > 0
+            ? product.packBuyPrice / product.packSize
+            : product.buyPrice,
         swapEmpty = product.isGallon;
 
-  double get subtotal => qty * price;
+  int get _packs => product.packSize > 0 ? qty ~/ product.packSize : 0;
+
+  /// Exact cash-out for this line — whole-dus price when bought by the pack,
+  /// else qty × per-base. A manual price edit clears [asPack] so this follows
+  /// the edited per-base price.
+  double get subtotal => asPack && product.packBuyPrice > 0
+      ? _packs * product.packBuyPrice
+      : qty * price;
+
+  double? get exactSubtotal =>
+      asPack && product.packBuyPrice > 0 ? subtotal : null;
 }
 
 class PurchaseScreen extends ConsumerStatefulWidget {
@@ -40,34 +53,43 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
     // Sold per dus/pack (bottol/gelas) → ask quantity + unit instead of the
     // fast +1 tap, so one kulakan can add a whole dus/lusin in one go.
     if (p.packUnit != null) {
-      final qty = await pickQuantity(context,
+      final r = await pickQuantity(context,
           productName: p.name, packUnit: p.packUnit, packSize: p.packSize);
-      if (qty == null || !mounted) return;
-      _mergeIntoCart(p, qty);
+      if (r == null || !mounted) return;
+      _mergeIntoCart(p, r.qtyBase, r.asPack);
       return;
     }
-    _mergeIntoCart(p, 1);
+    _mergeIntoCart(p, 1, false);
   }
 
-  void _mergeIntoCart(Product p, int qty) {
-    final existing = _cart.where((l) => l.product.id == p.id);
+  // Same product bought as pcs vs dus prices differently → separate lines.
+  void _mergeIntoCart(Product p, int qty, bool asPack) {
+    final existing =
+        _cart.where((l) => l.product.id == p.id && l.asPack == asPack);
     setState(() {
       if (existing.isNotEmpty) {
         existing.first.qty += qty;
       } else {
-        _cart.add(PurchaseCartLine(p, qty: qty));
+        _cart.add(PurchaseCartLine(p, qty: qty, asPack: asPack));
       }
     });
   }
 
   Future<void> _editQty(PurchaseCartLine l) async {
-    final qty = await pickQuantity(context,
+    final r = await pickQuantity(context,
         productName: l.product.name,
         packUnit: l.product.packUnit,
         packSize: l.product.packSize,
         initialQty: l.qty);
-    if (qty == null || !mounted) return;
-    setState(() => l.qty = qty);
+    if (r == null || !mounted) return;
+    setState(() {
+      l.qty = r.qtyBase;
+      l.asPack = r.asPack;
+      // Re-derive default price for the new unit unless the owner overrode it.
+      l.price = l.asPack && l.product.packBuyPrice > 0
+          ? l.product.packBuyPrice / l.product.packSize
+          : l.product.buyPrice;
+    });
   }
 
   Future<void> _editPrice(PurchaseCartLine l) async {
@@ -94,7 +116,13 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
         ],
       ),
     );
-    if (result != null) setState(() => l.price = result);
+    if (result != null) {
+      // Manual per-base price wins over the dus default.
+      setState(() {
+        l.price = result;
+        l.asPack = false;
+      });
+    }
   }
 
   Future<void> _save() async {
@@ -116,6 +144,7 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
                   qtyBase: l.qty,
                   price: l.price,
                   swapEmpty: l.product.isGallon && l.swapEmpty,
+                  subtotal: l.exactSubtotal,
                 ),
             ],
             paymentStatus: _paymentStatus,
@@ -278,7 +307,10 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
                         children: [
                           InkWell(
                             onTap: () => _editPrice(l),
-                            child: Text('@ ${rupiah.format(l.price)} ✎',
+                            child: Text(
+                                l.asPack && l.product.packBuyPrice > 0
+                                    ? '@ ${rupiah.format(l.product.packBuyPrice)}/${l.product.packUnit} ✎'
+                                    : '@ ${rupiah.format(l.price)} ✎',
                                 style: TextStyle(
                                     color:
                                         Theme.of(context).colorScheme.primary)),
@@ -300,20 +332,25 @@ class _PurchaseScreenState extends ConsumerState<PurchaseScreen> {
                       IconButton(
                         icon: const Icon(Icons.remove_circle_outline),
                         onPressed: () => setState(() {
-                          l.qty > 1 ? l.qty-- : _cart.removeAt(i);
+                          final step = l.asPack ? l.product.packSize : 1;
+                          l.qty > step ? l.qty -= step : _cart.removeAt(i);
                         }),
                       ),
                       InkWell(
                         onTap: () => _editQty(l),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text('${l.qty}',
+                          child: Text(
+                              l.asPack && l.product.packSize > 1
+                                  ? '${l.qty ~/ l.product.packSize} ${l.product.packUnit}'
+                                  : '${l.qty}',
                               style: const TextStyle(fontSize: 18)),
                         ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline),
-                        onPressed: () => setState(() => l.qty++),
+                        onPressed: () => setState(
+                            () => l.qty += l.asPack ? l.product.packSize : 1),
                       ),
                     ],
                   ),

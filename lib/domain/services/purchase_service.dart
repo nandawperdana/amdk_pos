@@ -9,13 +9,17 @@ class PurchaseLine {
   final double price; // buy price per base unit
   /// Gallon only: restock filled containers by swapping empties.
   final bool swapEmpty;
+  /// Exact line total when bought by the pack (dus), so cash-out matches the
+  /// invoice instead of qtyBase × a rounded per-base price. Null = derive.
+  final double? _subtotal;
   const PurchaseLine({
     required this.productId,
     required this.qtyBase,
     required this.price,
     this.swapEmpty = false,
-  });
-  double get subtotal => qtyBase * price;
+    double? subtotal,
+  }) : _subtotal = subtotal;
+  double get subtotal => _subtotal ?? qtyBase * price;
 }
 
 class PurchaseService {

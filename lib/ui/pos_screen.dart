@@ -45,18 +45,38 @@ const _paymentOptions = [
 
 class CartLine {
   final Product product;
-  int qty;
+  int qty; // base units (pcs)
   final GallonSaleMode gallonMode; // none for non-gallon
+  bool asPack; // sold by the pack (dus) → use packSellPrice
 
-  CartLine(this.product, {this.qty = 1, this.gallonMode = GallonSaleMode.none});
+  CartLine(this.product,
+      {this.qty = 1,
+      this.gallonMode = GallonSaleMode.none,
+      this.asPack = false});
 
-  /// Per-unit price for this line. A newCustomer gallon is ONE price
-  /// (water + container, no deposit) — everything else is just sellPrice.
-  double get unitPrice => gallonMode == GallonSaleMode.newCustomer
-      ? product.sellPrice + product.depositPrice
-      : product.sellPrice;
+  int get _packs => product.packSize > 0 ? qty ~/ product.packSize : 0;
 
-  double get subtotal => unitPrice * qty;
+  /// Exact line total. newCustomer gallon = one price (water + container). A
+  /// pack line with a pack price set charges whole-dus price; otherwise falls
+  /// back to per-pcs × qty (also covers packSellPrice unset).
+  double get subtotal {
+    if (gallonMode == GallonSaleMode.newCustomer) {
+      return (product.sellPrice + product.depositPrice) * qty;
+    }
+    if (asPack && product.packSellPrice > 0) {
+      return _packs * product.packSellPrice;
+    }
+    return product.sellPrice * qty;
+  }
+
+  /// Effective per-base price stored on the SaleItem row (informational; the
+  /// exact money lives in [subtotal]).
+  double get unitPrice => qty == 0 ? 0 : subtotal / qty;
+
+  /// Pass the exact pack total to the service only when it differs from
+  /// qtyBase × unitPrice would reconstruct — i.e. for pack lines.
+  double? get exactSubtotal =>
+      (asPack && product.packSellPrice > 0) ? subtotal : null;
 }
 
 class PosScreen extends ConsumerStatefulWidget {
@@ -137,42 +157,49 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     // Sold per dus/pack (bottol/gelas) → ask quantity + unit instead of the
     // fast +1 tap, so one sale can add a whole dus/lusin in one go.
     if (p.packUnit != null) {
-      final qty = await pickQuantity(context,
+      final r = await pickQuantity(context,
           productName: p.name,
           packUnit: p.packUnit,
           packSize: p.packSize,
           maxQty: remaining);
-      if (qty == null || !mounted) return;
-      _mergeIntoCart(p, qty);
+      if (r == null || !mounted) return;
+      _mergeIntoCart(p, r.qtyBase, r.asPack);
       return;
     }
 
     // Fast path: no pack, tap = +1. Same product → bump qty, don't create a
     // new line.
-    _mergeIntoCart(p, 1);
+    _mergeIntoCart(p, 1, false);
   }
 
-  void _mergeIntoCart(Product p, int qty) {
-    final existing = _cart.where(
-        (l) => l.product.id == p.id && l.gallonMode == GallonSaleMode.none);
+  // Merge into a line with the SAME product, gallon mode, AND pack flag —
+  // pcs and dus lines price differently, so they stay separate lines.
+  void _mergeIntoCart(Product p, int qty, bool asPack) {
+    final existing = _cart.where((l) =>
+        l.product.id == p.id &&
+        l.gallonMode == GallonSaleMode.none &&
+        l.asPack == asPack);
     setState(() {
       if (existing.isNotEmpty) {
         existing.first.qty += qty;
       } else {
-        _cart.add(CartLine(p, qty: qty));
+        _cart.add(CartLine(p, qty: qty, asPack: asPack));
       }
     });
   }
 
   Future<void> _editQty(CartLine l, int i) async {
-    final qty = await pickQuantity(context,
+    final r = await pickQuantity(context,
         productName: l.product.name,
         packUnit: l.product.packUnit,
         packSize: l.product.packSize,
         initialQty: l.qty,
         maxQty: _remainingExcluding(l));
-    if (qty == null || !mounted) return;
-    setState(() => l.qty = qty);
+    if (r == null || !mounted) return;
+    setState(() {
+      l.qty = r.qtyBase;
+      l.asPack = r.asPack;
+    });
   }
 
   /// A gallon must pick a mode: exchange (isi ulang, bawa kosong) or new
@@ -287,6 +314,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               qtyBase: l.qty,
               price: l.unitPrice,
               gallonMode: l.gallonMode,
+              subtotal: l.exactSubtotal,
             ),
         ],
         paymentMethod: method == 'credit' ? 'cash' : method,
@@ -406,17 +434,22 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             GallonSaleMode.newCustomer => ' (galon baru)',
             GallonSaleMode.none => '',
           };
+          final packNote = l.asPack && l.product.packSize > 1
+              ? '${l.qty ~/ l.product.packSize} ${l.product.packUnit} · '
+              : '';
           return ListTile(
             dense: true,
             title: Text('${l.product.name}$label'),
-            subtitle: Text(rupiah.format(l.subtotal)),
+            subtitle: Text('$packNote${rupiah.format(l.subtotal)}'),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
                   icon: const Icon(Icons.remove_circle_outline),
                   onPressed: () => setState(() {
-                    l.qty > 1 ? l.qty-- : _cart.removeAt(i);
+                    // Dus lines step a whole pack so qty stays a multiple.
+                    final step = l.asPack ? l.product.packSize : 1;
+                    l.qty > step ? l.qty -= step : _cart.removeAt(i);
                   }),
                 ),
                 InkWell(
@@ -430,13 +463,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline),
                   onPressed: () {
-                    if (_remaining(l.product) <= 0) {
+                    final step = l.asPack ? l.product.packSize : 1;
+                    if (_remaining(l.product) < step) {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content:
                               Text('Stok ${l.product.name} tidak cukup')));
                       return;
                     }
-                    setState(() => l.qty++);
+                    setState(() => l.qty += step);
                   },
                 ),
               ],

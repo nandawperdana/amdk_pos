@@ -11,13 +11,18 @@ class SaleLine {
   final double price;
   /// Gallon intent for this line (none for regular products).
   final GallonSaleMode gallonMode;
+  /// Exact line total. Set when sold by the pack (dus) so the stored amount is
+  /// the whole-pack price, not qtyBase × a rounded per-base price. Null =
+  /// derive qtyBase × price (the common per-pcs case).
+  final double? _subtotal;
   const SaleLine({
     required this.productId,
     required this.qtyBase,
     required this.price,
     this.gallonMode = GallonSaleMode.none,
-  });
-  double get subtotal => qtyBase * price;
+    double? subtotal,
+  }) : _subtotal = subtotal;
+  double get subtotal => _subtotal ?? qtyBase * price;
 }
 
 class SalesService {
