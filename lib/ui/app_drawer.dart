@@ -33,8 +33,32 @@ class AppDrawer extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Text('AMDK POS',
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Row(
+                    children: [
+                      Text('AMDK POS',
+                          style: Theme.of(context).textTheme.titleLarge),
+                      if (!isProdEnv) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            appEnv.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  Theme.of(context).colorScheme.onErrorContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                   Text(isOwner ? 'Owner' : 'Kasir',
                       style: Theme.of(context).textTheme.bodyMedium),
                 ],

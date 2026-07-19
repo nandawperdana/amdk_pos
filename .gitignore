@@ -29,6 +29,9 @@ migrate_working_dir/
 # Claude Code local settings (per-machine permissions)
 .claude/settings.local.json
 
+# Kredensial Supabase (dev/prod) — catatan pribadi owner, JANGAN commit.
+doc/supabase_credentials.local.md
+
 # FVM
 .fvm/
 

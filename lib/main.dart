@@ -16,9 +16,18 @@ export 'providers.dart';
 
 /// Supabase credentials via --dart-define (DO NOT commit secrets).
 /// Empty → sync disabled, app runs offline as usual.
-///   fvm flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
+///   fvm flutter run --dart-define=APP_ENV=dev \
+///     --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
 const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
+/// 'dev' | 'prod'. Defaults to 'dev' — a forgotten flag fails LOUD (visible
+/// badge) rather than silently assuming production. Prod builds MUST pass
+/// --dart-define=APP_ENV=prod explicitly alongside the prod project's
+/// SUPABASE_URL/SUPABASE_ANON_KEY, so a dev build can never point at the
+/// live store's data by accident.
+const appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'dev');
+const isProdEnv = appEnv == 'prod';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
