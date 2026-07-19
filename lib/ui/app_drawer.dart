@@ -7,6 +7,7 @@ import 'credit_screen.dart';
 import 'daily_report_screen.dart';
 import 'master_product_screen.dart';
 import 'purchase_screen.dart';
+import 'settings_screen.dart';
 import 'stock_take_screen.dart';
 
 /// Shared nav drawer for both roles — keeps the AppBar to title + live-status
@@ -102,6 +103,12 @@ class AppDrawer extends ConsumerWidget {
                     title: const Text('Master Produk'),
                     onTap: () => go(const MasterProductScreen()),
                   ),
+                  if (isOwner)
+                    ListTile(
+                      leading: const Icon(Icons.settings_outlined),
+                      title: const Text('Pengaturan'),
+                      onTap: () => go(const SettingsScreen()),
+                    ),
                 ],
               ),
             ),
