@@ -34,29 +34,28 @@ class ProductImportService {
     return out;
   }
 
-  /// Returns (inserted, skipped names, error lines).
+  /// Returns (inserted, updated names, error lines). Matches existing rows
+  /// by name; a match overwrites all columns on the local row (upsert).
   Future<(int, List<String>, List<String>)> importCsv(String csvText) async {
     final lines =
         csvText.split('\n').where((l) => l.trim().isNotEmpty).toList();
     if (lines.isEmpty) return (0, <String>[], <String>[]);
     final header = _splitCsvLine(lines.first);
-    final existing =
-        (await db.select(db.products).get()).map((p) => p.name).toSet();
+    final existing = {
+      for (final p in await db.select(db.products).get()) p.name: p.id,
+    };
 
     var inserted = 0;
-    final skipped = <String>[];
+    final updated = <String>[];
     final errors = <String>[];
     for (final line in lines.skip(1)) {
       final row = _splitCsvLine(line);
       final v = Map.fromIterables(header, row);
       final name = v['name'];
       if (name == null || name.trim().isEmpty) continue;
-      if (existing.contains(name)) {
-        skipped.add(name);
-        continue;
-      }
+      final existingId = existing[name];
       try {
-        await products.save(ProductsCompanion.insert(
+        final companion = ProductsCompanion.insert(
           name: name,
           brand: Value(v['brand'] ?? ''),
           category: Value(v['category'] ?? 'other'),
@@ -70,13 +69,22 @@ class ProductImportService {
           isGallon: Value(v['isGallon'] == 'true'),
           depositPrice: Value(double.parse(v['depositPrice'] ?? '0')),
           active: Value(v['active'] != 'false'),
-        ));
-        existing.add(name);
-        inserted++;
+        );
+        if (existingId != null) {
+          await products.save(companion, id: existingId);
+          updated.add(name);
+        } else {
+          await products.save(companion);
+          final row = await (db.select(db.products)
+                ..where((t) => t.name.equals(name)))
+              .getSingle();
+          existing[name] = row.id; // dedupe within same CSV upload
+          inserted++;
+        }
       } catch (e) {
         errors.add('$name: $e');
       }
     }
-    return (inserted, skipped, errors);
+    return (inserted, updated, errors);
   }
 }

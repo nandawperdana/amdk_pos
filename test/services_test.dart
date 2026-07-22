@@ -3,6 +3,7 @@ import 'package:amdk_pos/data/sync/sync_service.dart';
 import 'package:amdk_pos/domain/services/cashier_service.dart';
 import 'package:amdk_pos/domain/services/credit_service.dart';
 import 'package:amdk_pos/domain/services/gallon_service.dart';
+import 'package:amdk_pos/domain/services/product_import_service.dart';
 import 'package:amdk_pos/domain/services/product_service.dart';
 import 'package:amdk_pos/domain/services/purchase_service.dart';
 import 'package:amdk_pos/domain/services/reports_service.dart';
@@ -603,6 +604,34 @@ void main() {
     final summary = await reports.dailySummary(DateTime.now());
     expect(summary.revenue, 4 * 2000);
     expect(summary.grossProfit, 4 * 2000 - 4 * 1000);
+  });
+
+  test(
+      'CSV import: new name inserts, existing name updates in place by name',
+      () async {
+    final import = ProductImportService(db, ProductService(db));
+    const header =
+        'name,brand,category,baseUnit,packUnit,packSize,buyPrice,sellPrice,'
+        'packBuyPrice,packSellPrice,isGallon,depositPrice,active';
+    // "Aqua Botol 600ml" already exists from the fixture (see _p above);
+    // "Produk Baru" does not.
+    const csv = '$header\n'
+        'Aqua Botol 600ml,BrandX,bottle,pcs,,1,900,2200,0,0,false,0,true\n'
+        'Produk Baru,BrandY,other,pcs,,1,500,1000,0,0,false,0,true';
+
+    final (inserted, updated, errors) = await import.importCsv(csv);
+
+    expect(inserted, 1);
+    expect(updated, ['Aqua Botol 600ml']);
+    expect(errors, isEmpty);
+
+    final products = await db.select(db.products).get();
+    expect(products.where((p) => p.name == 'Produk Baru'), hasLength(1));
+    final updatedRow =
+        products.firstWhere((p) => p.name == 'Aqua Botol 600ml');
+    expect(updatedRow.sellPrice, 2200); // overwritten, not skipped
+    expect(products.where((p) => p.name == 'Aqua Botol 600ml'), hasLength(1),
+        reason: 'must update the existing row, not insert a duplicate');
   });
 
   group('StoreSettingsService', () {

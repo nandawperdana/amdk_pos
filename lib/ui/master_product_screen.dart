@@ -123,12 +123,12 @@ class MasterProductScreen extends ConsumerWidget {
     );
     if (csv == null || csv.trim().isEmpty || !context.mounted) return;
 
-    final (inserted, skipped, errors) =
+    final (inserted, updated, errors) =
         await ref.read(productImportServiceProvider).importCsv(csv);
     if (!context.mounted) return;
     final parts = [
       '$inserted produk masuk',
-      if (skipped.isNotEmpty) '${skipped.length} dilewati (sudah ada)',
+      if (updated.isNotEmpty) '${updated.length} diperbarui',
       if (errors.isNotEmpty) '${errors.length} gagal',
     ];
     ScaffoldMessenger.of(context)
