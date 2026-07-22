@@ -66,22 +66,25 @@ class MasterProductScreen extends ConsumerWidget {
                   ? '${_categoryLabel(p.category)} · jual ${rupiah.format(p.sellPrice)} · '
                       'beli ${rupiah.format(p.buyPrice)}'
                   : _categoryLabel(p.category)),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isOwner)
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _openForm(context, p),
-                    ),
-                  Switch(
-                    value: p.active,
-                    onChanged: (v) => ref
-                        .read(productServiceProvider)
-                        .setActive(p.id, v),
-                  ),
-                ],
-              ),
+              // Master data is owned by the owner phone; the cashier is
+              // read-only for it (edits sync down from the owner).
+              trailing: isOwner
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _openForm(context, p),
+                        ),
+                        Switch(
+                          value: p.active,
+                          onChanged: (v) => ref
+                              .read(productServiceProvider)
+                              .setActive(p.id, v),
+                        ),
+                      ],
+                    )
+                  : null,
               onTap: isOwner ? () => _openForm(context, p) : null,
             );
           },

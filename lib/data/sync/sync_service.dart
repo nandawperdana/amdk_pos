@@ -4,32 +4,32 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../database/database.dart';
 
-/// Offline-first sync between the cashier's local DB and Supabase (Postgres).
+/// Offline-first sync between two phones and Supabase (Postgres).
 ///
-/// Two directions, used by two different roles:
+/// OWNERSHIP IS SPLIT so each logical row has exactly ONE writer — that
+/// single-writer property is what keeps sync conflict-free:
+///   - LEDGER tables (sales, cash, stock, gallon, …) are OWNED BY THE CASHIER
+///     phone: it records transactions, pushes them up, the owner pulls them
+///     down for reports.
+///   - MASTER tables (products, customers, suppliers) are OWNED BY THE OWNER
+///     phone: the owner edits prices/active, pushes them up, the cashier
+///     pulls them down. The cashier is read-only for master.
 ///
-/// * PUSH (cashier device, [pushPending]) — the cashier writes locally and
-///   is the source of truth; it pushes new rows up. Two kinds of table need
-///   two strategies:
-///   - LEDGER tables are append-only with IMMUTABLE rows. Sync just sends new
-///     rows, tracked by a per-table high-water mark (lastId) in
-///     [SyncCursors]. Upsert with `ignoreDuplicates` (on conflict do nothing)
-///     — re-sending is safe. No per-row flag, no mutation of ledger rows.
-///   - MASTER tables (products, customers, suppliers) are MUTABLE — a
-///     product's price is edited, a product is soft-deleted (active=0). A
-///     high-water cursor would never re-send an edited row, so the cloud
-///     would go stale. These are small, so we re-push ALL rows every sync
-///     with a MERGE upsert (overwrite on conflict).
+/// So each phone runs BOTH directions, but only its own half (see the
+/// `ledger`/`master` flags on [pushPending]/[pullUpdates]):
+///   - Cashier: push ledger, pull master.
+///   - Owner:   push master, pull ledger.
 ///
-/// * PULL (owner's separate phone, [pullUpdates]) — the owner's device never
-///   writes transactional data itself; it pulls the cashier's data down into
-///   its OWN local mirror so `ReportsService` etc. can run unmodified against
-///   it, offline-capable once pulled. Ledger tables pull cursor-based
-///   (`pull_<table>` cursor, distinct from the push cursor so both can live
-///   in the same [SyncCursors] table without clashing); master tables pull a
-///   full replace each time. `device_id` is stripped on the way in — the
-///   local schema doesn't have that column, it only exists in the Postgres
-///   mirror to separate devices.
+/// Table strategies:
+///   - LEDGER: append-only, IMMUTABLE rows. Push/pull cursor-based, tracked by
+///     a per-table high-water mark in [SyncCursors] (push cursor `<table>`,
+///     pull cursor `pull_<table>` — distinct so both live in the same table).
+///     Upsert `ignoreDuplicates` — re-sending is safe.
+///   - MASTER: MUTABLE (price edited, product soft-deleted). A high-water
+///     cursor would never re-send an edited row, so master pushes ALL rows
+///     each sync with a MERGE upsert, and pulls a full replace. Small tables.
+/// `device_id` is stripped on pull — the local schema lacks that column, it
+/// only exists in the Postgres mirror to separate devices.
 ///
 /// Idempotent both ways: the Postgres mirror has PK `(device_id, id)`.
 ///
@@ -113,38 +113,46 @@ class SyncService {
   List<Map<String, dynamic>> _stamp(List<Map<String, dynamic>> rows) =>
       [for (final r in rows) {...r, 'device_id': deviceId}];
 
-  /// Push pending ledger rows + refresh all master rows to Supabase.
-  /// No-op if sync is disabled. Safe to retry (idempotent).
-  /// Returns the number of rows pushed.
-  Future<int> pushPending() async {
+  /// Push rows to Supabase. No-op if sync is disabled. Safe to retry
+  /// (idempotent). Returns the number of rows pushed.
+  ///
+  /// [ledger]/[master] gate which half runs so ownership can be split:
+  /// the cashier pushes ledger only (`master: false`), the owner pushes
+  /// master only (`ledger: false`). Single writer per table type keeps the
+  /// push conflict-free.
+  Future<int> pushPending({bool ledger = true, bool master = true}) async {
     final c = client;
     if (c == null) return 0;
 
     var pushed = 0;
 
     // Ledgers: cursor-based, ignore duplicates (immutable rows).
-    for (final table in _ledgerTables) {
-      final name = table.actualTableName;
-      while (true) {
-        final rows = await pendingRows(table);
-        if (rows.isEmpty) break;
-        await c.from(name).upsert(_stamp(rows),
-            onConflict: 'device_id,id', ignoreDuplicates: true);
-        final maxId =
-            rows.map((r) => r['id'] as int).reduce((a, b) => a > b ? a : b);
-        await _setCursor(name, maxId);
-        pushed += rows.length;
-        if (rows.length < 500) break;
+    if (ledger) {
+      for (final table in _ledgerTables) {
+        final name = table.actualTableName;
+        while (true) {
+          final rows = await pendingRows(table);
+          if (rows.isEmpty) break;
+          await c.from(name).upsert(_stamp(rows),
+              onConflict: 'device_id,id', ignoreDuplicates: true);
+          final maxId =
+              rows.map((r) => r['id'] as int).reduce((a, b) => a > b ? a : b);
+          await _setCursor(name, maxId);
+          pushed += rows.length;
+          if (rows.length < 500) break;
+        }
       }
     }
 
     // Master data: full merge upsert (edits overwrite the cloud copy).
-    for (final table in _masterTables) {
-      final rows = await allRows(table);
-      if (rows.isEmpty) continue;
-      await c.from(table.actualTableName).upsert(_stamp(rows),
-          onConflict: 'device_id,id'); // merge (default) → overwrite
-      pushed += rows.length;
+    if (master) {
+      for (final table in _masterTables) {
+        final rows = await allRows(table);
+        if (rows.isEmpty) continue;
+        await c.from(table.actualTableName).upsert(_stamp(rows),
+            onConflict: 'device_id,id'); // merge (default) → overwrite
+        pushed += rows.length;
+      }
     }
 
     await prefs?.setInt(_lastSyncKey, DateTime.now().millisecondsSinceEpoch);
@@ -156,42 +164,51 @@ class SyncService {
   /// full replace each pull (small, may have edits). Ledger tables:
   /// cursor-based, append-only (immutable rows, safe to just insert new
   /// ones). No-op if sync is disabled. Returns the number of rows pulled.
-  Future<int> pullUpdates() async {
+  ///
+  /// [ledger]/[master] gate which half runs (mirror of [pushPending]): the
+  /// cashier pulls master only (`ledger: false`) to receive the owner's
+  /// price edits, the owner pulls ledger only (`master: false`) to receive
+  /// the cashier's sales for reports.
+  Future<int> pullUpdates({bool ledger = true, bool master = true}) async {
     final c = client;
     if (c == null) return 0;
 
     var pulled = 0;
 
     // Master data: full replace (edits/soft-deletes must propagate down too).
-    for (final table in _masterTables) {
-      final rows = await c.from(table.actualTableName).select();
-      for (final row in rows) {
-        await _upsertLocal(table, row);
-      }
-      pulled += rows.length;
-    }
-
-    // Ledgers: cursor-based, paginated, ascending.
-    for (final table in _ledgerTables) {
-      final name = table.actualTableName;
-      final cursorKey = 'pull_$name';
-      while (true) {
-        final cursor = await _cursor(cursorKey);
-        final rows = await c
-            .from(name)
-            .select()
-            .gt('id', cursor)
-            .order('id')
-            .limit(500);
-        if (rows.isEmpty) break;
+    if (master) {
+      for (final table in _masterTables) {
+        final rows = await c.from(table.actualTableName).select();
         for (final row in rows) {
           await _upsertLocal(table, row);
         }
-        final maxId =
-            rows.map((r) => _asInt(r['id'])).reduce((a, b) => a > b ? a : b);
-        await _setCursor(cursorKey, maxId);
         pulled += rows.length;
-        if (rows.length < 500) break;
+      }
+    }
+
+    // Ledgers: cursor-based, paginated, ascending.
+    if (ledger) {
+      for (final table in _ledgerTables) {
+        final name = table.actualTableName;
+        final cursorKey = 'pull_$name';
+        while (true) {
+          final cursor = await _cursor(cursorKey);
+          final rows = await c
+              .from(name)
+              .select()
+              .gt('id', cursor)
+              .order('id')
+              .limit(500);
+          if (rows.isEmpty) break;
+          for (final row in rows) {
+            await _upsertLocal(table, row);
+          }
+          final maxId =
+              rows.map((r) => _asInt(r['id'])).reduce((a, b) => a > b ? a : b);
+          await _setCursor(cursorKey, maxId);
+          pulled += rows.length;
+          if (rows.length < 500) break;
+        }
       }
     }
 

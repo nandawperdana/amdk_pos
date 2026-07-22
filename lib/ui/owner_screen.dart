@@ -5,9 +5,10 @@ import '../providers.dart';
 import 'app_drawer.dart';
 import 'pos_screen.dart' show rupiah;
 
-/// Today's summary — reads the LOCAL db, which on the owner's own separate
-/// phone is a pulled-down mirror of the cashier's data (see [OwnerScreen]),
-/// so this works offline once a pull has happened at least once.
+/// Today's summary — reads the LOCAL db. On the owner's phone the ledger half
+/// is a pulled-down mirror of the cashier's data (see [OwnerScreen]); the
+/// master half (products/prices) is owned and edited here. Works offline once
+/// a sync has happened at least once.
 final ownerSummaryProvider = FutureProvider.autoDispose((ref) async {
   final db = ref.watch(dbProvider);
   final reports = ref.watch(reportsServiceProvider);
@@ -17,10 +18,11 @@ final ownerSummaryProvider = FutureProvider.autoDispose((ref) async {
   return (summary: summary, gallon: gallon, cash: cash);
 });
 
-/// The owner's device never writes transactional data itself (no POS/
-/// kulakan there) — it only PULLS from Supabase into its own local mirror,
-/// then reads reports off that local copy exactly like the cashier does.
-/// Offline-capable: once pulled at least once, reports work with no network.
+/// The owner's device owns MASTER data (products/prices): edits here, pushes
+/// them up. It does not record transactions — it PULLS the cashier's ledger
+/// down into its local mirror and reads reports off that, exactly like the
+/// cashier does. Offline-capable: once synced at least once, reports work
+/// with no network.
 class OwnerScreen extends ConsumerStatefulWidget {
   const OwnerScreen({super.key});
 
@@ -46,6 +48,8 @@ class _OwnerScreenState extends ConsumerState<OwnerScreen> {
     await _pull(silent: true);
   }
 
+  /// Owner owns master data — push its product/price edits UP, then pull the
+  /// cashier's ledger DOWN for reports. One button, both halves.
   Future<void> _pull({bool silent = false}) async {
     final sync = ref.read(syncServiceProvider);
     if (!sync.enabled) {
@@ -54,16 +58,17 @@ class _OwnerScreenState extends ConsumerState<OwnerScreen> {
     }
     setState(() => _pulling = true);
     try {
-      final n = await sync.pullUpdates();
+      await sync.pushPending(ledger: false); // push master/prices
+      final n = await sync.pullUpdates(master: false); // pull ledger
       ref.invalidate(ownerSummaryProvider);
       if (mounted && (!silent || n > 0)) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Tarik data: $n baris diperbarui')));
+            SnackBar(content: Text('Sync: $n baris laporan diperbarui')));
       }
     } catch (e) {
       if (mounted && !silent) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Gagal tarik data: $e')));
+            .showSnackBar(SnackBar(content: Text('Gagal sync: $e')));
       }
     } finally {
       if (mounted) setState(() => _pulling = false);
@@ -78,7 +83,7 @@ class _OwnerScreenState extends ConsumerState<OwnerScreen> {
         title: const Text('Owner — Hari Ini'),
         actions: [
           IconButton(
-            tooltip: 'Tarik data terbaru dari cloud',
+            tooltip: 'Kirim harga & tarik laporan dari cloud',
             icon: _pulling
                 ? const SizedBox(
                     width: 20,
@@ -120,8 +125,8 @@ class _OwnerScreenState extends ConsumerState<OwnerScreen> {
       );
 }
 
-/// Cloud push-sync button — cashier only (the device that holds the
-/// source-of-truth data and is the only one that should ever push).
+/// Cloud sync button — cashier device. Pushes its ledger (sales/cash/…) up
+/// and pulls master (products/prices, owned by the owner) down in one tap.
 class SyncButton extends ConsumerStatefulWidget {
   const SyncButton({super.key});
 
@@ -135,10 +140,12 @@ class _SyncButtonState extends ConsumerState<SyncButton> {
   Future<void> _sync() async {
     setState(() => _busy = true);
     try {
-      final n = await ref.read(syncServiceProvider).pushPending();
+      final sync = ref.read(syncServiceProvider);
+      final up = await sync.pushPending(master: false); // push ledger
+      final down = await sync.pullUpdates(ledger: false); // pull master/prices
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Sync: $n baris terkirim ke cloud')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Sync: $up terkirim, $down harga diperbarui')));
       }
     } catch (e) {
       if (mounted) {

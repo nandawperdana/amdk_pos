@@ -66,8 +66,10 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
 - Kasir: **HP Android** (owner juga pakai HP untuk mode owner).
 - Deployment: kasir offline sebagai source of truth + owner baca laporan dari
   cloud → butuh sinkronisasi.
-- Sinkronisasi: **push-only, bebas konflik** (dimungkinkan oleh ledger
-  append-only + owner read-only). Target Supabase/Postgres. Masih stub di
+- Sinkronisasi: **kepemilikan data dipisah per device, bebas konflik** — kasir
+  satu-satunya penulis ledger (push ledger, pull master), owner satu-satunya
+  penulis master/harga (push master, pull ledger). Satu penulis per jenis
+  tabel = tak pernah tabrakan. Target Supabase/Postgres.
   `lib/data/sync/sync_service.dart` (Fase 2).
 - **Printer struk DITUNDA untuk MVP.** POS cukup mencatat di layar dulu. Kalau
   nanti perlu (langganan/reseller atau nota antar): printer termal Bluetooth
@@ -114,7 +116,9 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
   (Sync/Refresh).
 - Master produk CRUD (`lib/ui/master_product_screen.dart` + `ProductService`) —
   tambah/edit/nonaktif (soft-delete, tak hapus baris); `isGallon` diikat
-  kategori=='gallon'. Kasir cuma toggle aktif/nonaktif, owner full CRUD.
+  kategori=='gallon'. Owner full CRUD + import CSV (upsert by name — nama
+  sudah ada → update baris, `ProductImportService`); kasir READ-ONLY penuh
+  (master data dimiliki device owner, lihat bagian sync di bawah).
 - Tutup kasir (`lib/ui/cashier_closing_screen.dart` + `CashierService`) —
   `CashierClosings` append-only + baris penyesuaian selisih (schemaVersion 2).
 - Kulakan/pembelian (`lib/ui/purchase_screen.dart` + `PurchaseService`) —
@@ -127,9 +131,9 @@ Aplikasi POS, stok, kas, dan laporan untuk toko air minum kemasan & galon
   penjualan per produk + arus kas per kategori.
 - Owner: dashboard hari ini dari DB lokal (cloud = Fase 2) + tombol ke
   laporan harian.
-- Sync cloud (`lib/data/sync/sync_service.dart`) — push-only cursor-based ke
-  Supabase, gated di kredensial `--dart-define`; DDL di `doc/supabase_setup.sql`.
-  Layer jadi & teruji offline; live round-trip nunggu project Supabase.
+- Sync cloud (`lib/data/sync/sync_service.dart`) — kepemilikan data terpisah
+  per device (lihat bagian "Sinkronisasi" di atas & requirement di bawah),
+  gated di kredensial `--dart-define`; DDL di `doc/supabase_setup.sql`.
 - Piutang/utang (`lib/domain/services/credit_service.dart` +
   `lib/ui/credit_screen.dart` + `party_picker.dart`) — tab per pihak,
   saldo diturunkan dari SUM, pelunasan append-only. POS punya bayar
@@ -189,9 +193,9 @@ Owner minta beberapa penyesuaian. P0 (rework galon) & P1 sudah selesai:
   Master Produk, Kulakan, Laporan) pindah ke drawer. Ganti Peran di footer
   drawer (dulu di popup menu).
 - **Kontrol akses per peran**:
-  - Master produk: kasir cuma toggle aktif/nonaktif (Switch), tombol
-    tambah/edit disembunyikan (`isOwner` check di
-    `master_product_screen.dart`). Owner tetap full CRUD.
+  - Master produk: kasir READ-ONLY total (tombol tambah/edit/toggle/import
+    disembunyikan, `isOwner` check di `master_product_screen.dart`). Owner
+    full CRUD — master data dimiliki device owner (lihat sync di bawah).
   - Kulakan: HANYA muncul di drawer Owner, dihapus total dari drawer/menu
     Kasir.
 - **PIN lokal khusus Owner** (kasir tanpa PIN) —
@@ -203,35 +207,44 @@ Owner minta beberapa penyesuaian. P0 (rework galon) & P1 sudah selesai:
   diminta ulang tiap sesi masuk Owner, bukan cuma sekali seumur hidup app.
   Tanpa alur lupa-PIN (clear data/reinstall kalau lupa — cukup untuk toko
   tunggal, satu owner).
-- **Auto-sync harian** — `SyncService.dueForAutoSync`/`lastSyncAt` (cek
-  timestamp di SharedPreferences, bukan daemon/WorkManager). Kasir
-  (`pos_screen.dart` `initState`) cek sekali tiap app dibuka: kalau >24 jam
-  sejak sync sukses terakhir (atau belum pernah), push otomatis diam-diam
-  (gagal = silent, tombol Sync manual di AppBar tetap ada buat jaga-jaga).
-  Timestamp disetel ulang tiap `pushPending()` sukses.
-- **Owner baca laporan dari cloud (offline-capable, HP terpisah)** —
-  `SyncService.pullUpdates()`: arah kebalikan dari push. Master (produk/
-  supplier/customer) full-replace tiap pull; ledger cursor-based pakai key
-  `pull_<table>` (beda dari cursor push `<table>`, jadi aman di
-  `SyncCursors` yang sama). `device_id` dibuang pas masuk (kolom itu cuma
-  ada di mirror Postgres). Owner (`owner_screen.dart`, kini
-  `ConsumerStatefulWidget`) auto-pull sekali/hari di `initState` (gantian
-  cadence sama seperti auto-push kasir, prefs terpisah per device jadi
-  aman) + tombol refresh manual (icon sama, ganti fungsi jadi pull lalu
-  invalidate `ownerSummaryProvider`). `ReportsService`/`gallonBalance`/
-  `cashBalance` DIPAKAI ULANG tanpa ubah — jalan dari DB lokal yang
-  sekarang adalah cermin hasil pull di HP owner, makanya offline-capable
-  begitu pernah pull sekali.
-  **PENTING — batasan operasional**: HP owner yang terpisah dari kasir
-  HANYA boleh dipakai buat lihat laporan (read-only by convention, bukan
-  dipaksa di level kode). JANGAN pakai Kulakan/Tutup Kasir/dsb dari HP
-  owner terpisah itu — tulisannya cuma nyangkut lokal di HP itu doang,
-  TIDAK PERNAH ke-push (owner tidak punya `SyncButton`/push), jadi bikin
-  angka beda sama kasir tanpa ketahuan. Kulakan (meski menunya di Owner)
-  tetap harus dikerjakan di device kasir (switch ke mode Owner di device
-  itu kalau perlu) — bukan di HP pribadi owner. Ini technical debt yang
-  perlu solusi lebih baku (mis. flag "primary device") kalau jadi masalah
-  nyata; untuk sekarang cukup didokumentasikan sebagai batasan pemakaian.
+- **Sync dua-arah, kepemilikan data dipisah per device** (rework dari model
+  awal "push-only kasir, pull-only owner" — owner sekarang BOLEH edit harga
+  dari HP-nya sendiri tanpa harus ke device kasir):
+  - Prinsip: satu jenis tabel = satu penulis. Ledger (sales/cash/stok/galon)
+    DIMILIKI kasir — cuma kasir yang push, owner cuma pull. Master (produk/
+    harga/supplier/customer) DIMILIKI owner — cuma owner yang push, kasir
+    cuma pull. Satu penulis per tabel → tak pernah tabrakan/rebutan konflik.
+  - `SyncService.pushPending({ledger, master})` &
+    `pullUpdates({ledger, master})` — flag nyalain/matiin tiap paruh. Kasir
+    panggil `pushPending(master: false)` + `pullUpdates(ledger: false)`.
+    Owner panggil `pushPending(ledger: false)` + `pullUpdates(master: false)`.
+    Default kedua flag `true` (dipakai test lama, backward compatible).
+  - Master: full-replace tiap pull, full merge-upsert tiap push (tabel kecil,
+    re-push semua baris tiap kali). Ledger: cursor-based per arah — push
+    pakai key `<table>`, pull pakai key `pull_<table>` (beda cursor, aman di
+    `SyncCursors` yang sama). `device_id` dibuang pas masuk lokal (kolom itu
+    cuma ada di mirror Postgres).
+  - **Auto-sync harian** — `SyncService.dueForAutoSync`/`lastSyncAt` (cek
+    timestamp SharedPreferences, bukan daemon/WorkManager). Kasir
+    (`pos_screen.dart` `initState`) & Owner (`owner_screen.dart` `initState`,
+    `ConsumerStatefulWidget`) masing-masing cek sekali tiap app dibuka: kalau
+    >24 jam sejak sync sukses terakhir, sync paruhnya sendiri otomatis diam-
+    diam (gagal = silent). Tombol manual (`SyncButton` di AppBar kasir, icon
+    refresh di AppBar owner) tetap ada buat jaga-jaga & langsung invalidate
+    `ownerSummaryProvider` di sisi owner.
+  - `ReportsService`/`gallonBalance`/`cashBalance` DIPAKAI ULANG tanpa ubah —
+    jalan dari DB lokal, yang di HP owner adalah cermin hasil pull ledger,
+    offline-capable begitu pernah sync sekali.
+  - **PENTING — hygiene cloud dev**: pull master kasir ambil SEMUA baris
+    master di cloud tanpa filter device (`select()` polos). Aman kalau cloud
+    cuma punya master dari SATU device (owner). Project Supabase DEV yang
+    dipakai sepanjang sesi testing sebelumnya sudah kotor sama baris master
+    dari device kasir lama (era push-only) — WAJIB wipe baris master di
+    project itu, atau pakai project PROD bersih yang belum pernah di-push
+    kasir, sebelum sync owner↔kasir dipakai beneran. Kalau butuh kebal total
+    dari hygiene ini: ubah conflict key master jadi `id` polos (bukan
+    `device_id,id`) di `doc/supabase_setup.sql` — DITUNDA (YAGNI, cukup
+    disiplin pakai project bersih dulu).
 - **Stok per barang + COGS FIFO** — barang stok ≤0 tak bisa dijual (grid
   POS disable + label "Habis", `stockMapProvider` di `pos_screen.dart`,
   SUM `StockMovements` per produk). `SaleItems.cogs` (schemaVersion 6,

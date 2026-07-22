@@ -105,10 +105,11 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     final sync = ref.read(syncServiceProvider);
     if (!sync.enabled || !sync.dueForAutoSync) return;
     try {
-      final n = await sync.pushPending();
-      if (mounted && n > 0) {
+      final up = await sync.pushPending(master: false); // push ledger
+      await sync.pullUpdates(ledger: false); // pull master/prices
+      if (mounted && up > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Auto-sync: $n baris terkirim ke cloud')));
+            SnackBar(content: Text('Auto-sync: $up baris terkirim ke cloud')));
       }
     } catch (_) {
       // Silent — a background sync hiccup shouldn't block the cashier; the
