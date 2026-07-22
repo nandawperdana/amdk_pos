@@ -62,9 +62,10 @@ class MasterProductScreen extends ConsumerWidget {
                   style: TextStyle(
                       decoration:
                           p.active ? null : TextDecoration.lineThrough)),
-              subtitle: Text(
-                  '${_categoryLabel(p.category)} · jual ${rupiah.format(p.sellPrice)} · '
-                  'beli ${rupiah.format(p.buyPrice)}'),
+              subtitle: Text(isOwner
+                  ? '${_categoryLabel(p.category)} · jual ${rupiah.format(p.sellPrice)} · '
+                      'beli ${rupiah.format(p.buyPrice)}'
+                  : _categoryLabel(p.category)),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -172,6 +173,8 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
   late final TextEditingController _sell;
   late final TextEditingController _packUnit;
   late final TextEditingController _packSize;
+  late final TextEditingController _packBuy;
+  late final TextEditingController _packSell;
   late final TextEditingController _deposit;
   late String _category;
 
@@ -186,13 +189,31 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
     _sell = TextEditingController(text: _p?.sellPrice.toStringAsFixed(0) ?? '');
     _packUnit = TextEditingController(text: _p?.packUnit ?? '');
     _packSize = TextEditingController(text: '${_p?.packSize ?? 1}');
+    _packBuy = TextEditingController(
+        text: (_p?.packBuyPrice ?? 0) == 0
+            ? ''
+            : _p!.packBuyPrice.toStringAsFixed(0));
+    _packSell = TextEditingController(
+        text: (_p?.packSellPrice ?? 0) == 0
+            ? ''
+            : _p!.packSellPrice.toStringAsFixed(0));
     _deposit = TextEditingController(text: _p?.depositPrice.toStringAsFixed(0) ?? '');
     _category = _p?.category ?? 'other';
   }
 
   @override
   void dispose() {
-    for (final c in [_name, _brand, _buy, _sell, _packUnit, _packSize, _deposit]) {
+    for (final c in [
+      _name,
+      _brand,
+      _buy,
+      _sell,
+      _packUnit,
+      _packSize,
+      _packBuy,
+      _packSell,
+      _deposit
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -215,6 +236,11 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
           _category == 'gallon' ? (double.tryParse(_deposit.text) ?? 0) : 0),
       packUnit: Value(packUnit.isEmpty ? null : packUnit),
       packSize: Value(int.tryParse(_packSize.text) ?? 1),
+      // Dus prices only meaningful with a pack unit; store 0 otherwise.
+      packBuyPrice: Value(
+          packUnit.isEmpty ? 0 : (double.tryParse(_packBuy.text) ?? 0)),
+      packSellPrice: Value(
+          packUnit.isEmpty ? 0 : (double.tryParse(_packSell.text) ?? 0)),
     );
     await ref.read(productServiceProvider).save(values, id: _p?.id);
     if (mounted) Navigator.pop(context);
@@ -316,6 +342,37 @@ class _ProductFormScreenState extends ConsumerState<_ProductFormScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _packBuy,
+                    decoration: const InputDecoration(
+                        labelText: 'Harga beli/dus (opsional)',
+                        prefixText: 'Rp '),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _packSell,
+                    decoration: const InputDecoration(
+                        labelText: 'Harga jual/dus (opsional)',
+                        prefixText: 'Rp '),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                  'Kosongkan jika harga dus = harga satuan × isi. Diisi = harga '
+                  'khusus per dus (bisa lebih murah per pcs).',
+                  style: TextStyle(fontSize: 12)),
             ),
             const SizedBox(height: 24),
             SizedBox(

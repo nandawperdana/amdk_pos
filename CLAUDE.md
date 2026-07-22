@@ -149,8 +149,8 @@ SELESAI di Fase 2:
   dijalankan, live round-trip terverifikasi (push idempotent, master
   full-merge vs ledger cursor-based, nol duplikat). Jalankan dengan
   `fvm flutter run --dart-define=APP_ENV=dev --dart-define=SUPABASE_URL=...
-  --dart-define=SUPABASE_ANON_KEY=...` (nilai kredensial di catatan pribadi
-  owner, bukan di repo).
+  --dart-define=SUPABASE_ANON_KEY=...` (kredensial di bagian "Kredensial
+  Supabase" di bawah).
 - **Pisah kredensial dev vs prod** — `main.dart` const `appEnv`/`isProdEnv`
   dari `--dart-define=APP_ENV=dev|prod`, default `dev` (lupa set flag =
   gagal KELIHATAN, bukan diam-diam nganggep prod). Badge "DEV" muncul di
@@ -253,6 +253,24 @@ DITUNDA (belum ada kebutuhan):
 - Harga reseller — belum berencana punya reseller. Tabel `Customers.type`
   sudah punya nilai `reseller`, tapi harga per-tipe tak diimplementasi dulu
   (YAGNI). Aktifkan kalau reseller benar-benar ada.
+
+## Kredensial Supabase
+
+`anon public` key — aman ditaruh di sini/di client (bukan secret, akses data
+tetap digerbangi RLS di Postgres). JANGAN pernah taruh `service_role` key di
+sini atau di client manapun.
+
+**DEV** (data uji-coba, bukan data toko asli — lihat catatan di atas):
+```
+SUPABASE_URL=https://bzhjreftqbfjhlmtpbpg.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6aGpyZWZ0cWJmamhsbXRwYnBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzOTkwMjAsImV4cCI6MjA5OTk3NTAyMH0.IT4nvMiflQfRmXZVf7zMi_dLxYhj8KPZKt-fVFGQDNI
+```
+
+**PROD** (project bersih, khusus data toko asli):
+```
+SUPABASE_URL=https://uaswqzhcxffpaesjkgvj.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhc3dxemhjeGZmcGFlc2prZ3ZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0NDcwMDAsImV4cCI6MjEwMDAyMzAwMH0.0C79BPOajXSRiv2Hr38zNDAvpwozjGFPkACFvxUN1vo
+```
 
 ## Konvensi
 
