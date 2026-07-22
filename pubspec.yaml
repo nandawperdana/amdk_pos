@@ -1,7 +1,7 @@
 name: amdk_pos
 description: POS, stok, kas, dan laporan untuk toko AMDK (air minum & galon).
 publish_to: 'none'
-version: 0.1.0
+version: 0.2.0
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
